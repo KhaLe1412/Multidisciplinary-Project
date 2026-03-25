@@ -1,0 +1,70 @@
+@import "./fonts.css";
+@import "./tailwind.css";
+@import "./theme.css";
+
+/* ── Global hover effect improvements ── */
+
+/* Smooth transition for all interactive elements */
+button,
+a,
+[role="button"],
+[role="tab"],
+label[for],
+select {
+  transition-property:
+    color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Prevent double-transition conflicts (explicit transition-all elements keep their own) */
+.transition-all {
+  transition-duration: 200ms;
+}
+
+/* Dark mode: soften hover backgrounds that would appear stark white */
+.dark button:hover,
+.dark a:hover,
+.dark [role="button"]:hover {
+  opacity: 0.9;
+}
+
+/* Table rows - smoother hover */
+tr {
+  transition: background-color 120ms ease;
+}
+
+/* Cards and clickable panels - use will-change for GPU-accelerated smoothness */
+.cursor-pointer {
+  will-change: transform, box-shadow;
+}
+
+/* Fix hover:bg-white being jarring – override to a subtle tint in dark contexts */
+.dark .hover\:bg-white:hover,
+.dark .hover\:bg-white\/80:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Soften hover:bg-slate-50 and hover:bg-slate-100 in dark mode */
+.dark .hover\:bg-slate-50:hover {
+  background-color: rgba(148, 163, 184, 0.08) !important;
+}
+.dark .hover\:bg-slate-100:hover {
+  background-color: rgba(148, 163, 184, 0.12) !important;
+}
+.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.08) !important;
+}
+.dark .hover\:bg-green-50:hover {
+  background-color: rgba(34, 197, 94, 0.08) !important;
+}
+.dark .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+}
+
+/* Sidebar nav hover: add subtle background to make active state more visible */
+aside nav a:not([class*="bg-"]):hover,
+aside nav a:hover {
+  background-color: rgba(99, 179, 237, 0.1) !important;
+  border-radius: 0.5rem;
+}
