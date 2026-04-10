@@ -14,20 +14,20 @@ export function Login() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError('Vui lòng nhập đầy đủ thông tin!');
       return;
     }
-    const success = login(email, password);
+    const success = await login(email, password);
     if (success) navigate('/control');
     else setError('Email hoặc mật khẩu không đúng!');
   };
 
-  const handleGmail = () => {
-    login('admin@factory.vn', 'Admin@123');
-    navigate('/control');
+  const handleGmail = async () => {
+    const success = await login('admin@test.com', 'admin123');
+    if (success) navigate('/control');
   };
 
   const handleForgot = (e: React.FormEvent) => {
@@ -158,9 +158,8 @@ export function Login() {
               {/* Demo accounts hint */}
               <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 space-y-1">
                 <p style={{ fontWeight: 600 }} className="text-slate-600">💡 Tài khoản demo:</p>
-                <p><span className="text-blue-600 font-mono">admin@factory.vn</span> / <span className="font-mono">Admin@123</span> — Quản trị viên</p>
-                <p><span className="text-blue-600 font-mono">nva@factory.vn</span> / <span className="font-mono">Op@123</span> — Vận hành (DRY-001,002)</p>
-                <p><span className="text-blue-600 font-mono">viewer@factory.vn</span> / <span className="font-mono">View@123</span> — Chỉ xem thống kê</p>
+                <p><span className="text-blue-600 font-mono">admin@test.com</span> / <span className="font-mono">admin123</span> — Quản trị viên</p>
+                <p><span className="text-blue-600 font-mono">staff@test.com</span> / <span className="font-mono">staff123</span> — Nhân viên</p>
               </div>
 
               <div className="relative my-5">

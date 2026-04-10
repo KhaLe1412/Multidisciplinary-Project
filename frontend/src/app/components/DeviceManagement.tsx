@@ -1,6 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { Dryer, Device, DryerStatus, DryerMode } from "../data/mockData";
+import { Dryer, DryerStatus } from "../data/mockData";
+import {
+  apiCreateArea,
+  apiUpdateArea,
+  apiDeleteArea,
+  apiCreateDeviceType,
+  apiUpdateDeviceType,
+  apiDeleteDeviceType,
+  apiCreateDryer,
+  apiUpdateDryer,
+  apiDeleteDryer,
+  apiCreateDevice,
+  apiUpdateDevice,
+  apiDeleteDevice,
+  apiFetchUsers,
+  SystemUser,
+} from "../api/deviceManagementApi";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   Plus,
@@ -52,7 +68,7 @@ const statusConfig: Record<
   DryerStatus,
   { label: string; bg: string; text: string; dot: string }
 > = {
-  inactive: {
+  off: {
     label: "Tắt",
     bg: "bg-slate-100",
     text: "text-slate-500",
@@ -64,7 +80,7 @@ const statusConfig: Record<
     text: "text-blue-700",
     dot: "bg-blue-500",
   },
-  active: {
+  running: {
     label: "Đang hoạt động",
     bg: "bg-green-100",
     text: "text-green-700",
@@ -73,7 +89,7 @@ const statusConfig: Record<
 };
 
 function StatusBadge({ status }: { status: DryerStatus }) {
-  const cfg = statusConfig[status] || statusConfig.inactive;
+  const cfg = statusConfig[status] || statusConfig.off;
   return (
     <span
       className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${cfg.bg} ${cfg.text}`}
@@ -128,8 +144,19 @@ export function DeviceManagement() {
     dryers,
     setDryers,
     currentUser,
-    users,
   } = useApp();
+
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  useEffect(() => {
+    apiFetchUsers()
+      .then(setSystemUsers)
+      .catch(() => {});
+  }, []);
+  const activeUsers = systemUsers.filter(
+    (u) => u.status === "active" && u.role !== "viewer",
+  );
+  const getUserName = (id?: number) =>
+    systemUsers.find((u) => u.id === id)?.full_name;
   const [activeTab, setActiveTab] = useState<
     "areas" | "deviceTypes" | "dryers"
   >("areas");
@@ -143,14 +170,14 @@ export function DeviceManagement() {
     id: "",
     name: "",
     description: "",
-    manager: "",
+    managerId: "",
   });
   const [editAreaId, setEditAreaId] = useState<string | null>(null);
   const [editAreaForm, setEditAreaForm] = useState({
     id: "",
     name: "",
     description: "",
-    manager: "",
+    managerId: "",
   });
 
   // Device type management state
@@ -161,7 +188,7 @@ export function DeviceManagement() {
     description: "",
     unit: "",
     unitNA: false,
-    category: "sensor" as "sensor" | "actuator",
+    category: "sensor" as "sensor" | "controller",
     valueType: "number" as "number" | "boolean" | "text",
     minValue: "",
     maxValue: "",
@@ -174,7 +201,7 @@ export function DeviceManagement() {
     description: "",
     unit: "",
     unitNA: false,
-    category: "sensor" as "sensor" | "actuator",
+    category: "sensor" as "sensor" | "controller",
     valueType: "number" as "number" | "boolean" | "text",
     minValue: "",
     maxValue: "",
@@ -208,7 +235,7 @@ export function DeviceManagement() {
     id: "",
     name: "",
     areaId: "",
-    operator: "",
+    managerId: "",
     capacity: "",
   });
 
@@ -220,7 +247,7 @@ export function DeviceManagement() {
   const [addDryerFromAreaForm, setAddDryerFromAreaForm] = useState({
     id: "",
     name: "",
-    operator: "",
+    managerId: "",
     capacity: "",
   });
 
@@ -279,55 +306,40 @@ export function DeviceManagement() {
   }
 
   // ===== AREA CRUD =====
-  const addArea = () => {
+  const addArea = async () => {
     if (!areaForm.name.trim()) return;
-    const id = areaForm.id.trim() || `AREA-${String(Date.now()).slice(-6)}`;
-    if (areas.find((a) => a.id === id)) {
-      showWarning("Trùng ID", "ID khu vực đã tồn tại!");
-      return;
-    }
-    setAreas((prev) => [
-      ...prev,
-      {
-        id,
+    try {
+      const created = await apiCreateArea({
         name: areaForm.name,
         description: areaForm.description,
-        manager: areaForm.manager,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setAreaForm({ id: "", name: "", description: "", manager: "" });
-    setAddAreaOpen(false);
+        manager_id: areaForm.managerId ? parseInt(areaForm.managerId) : null,
+      });
+      setAreas((prev) => [...prev, created]);
+      setAreaForm({ id: "", name: "", description: "", managerId: "" });
+      setAddAreaOpen(false);
+    } catch {
+      showWarning("Lỗi", "Không thể tạo khu vực. Vui lòng thử lại!");
+    }
   };
 
-  const saveEditArea = (oldId: string) => {
-    const newId = editAreaForm.id.trim();
-    if (!newId || !editAreaForm.name) {
-      showWarning("Thiếu thông tin", "Vui lòng nhập đầy đủ thông tin!");
+  const saveEditArea = async (oldId: string) => {
+    if (!editAreaForm.name) {
+      showWarning("Thiếu thông tin", "Vui lòng nhập tên khu vực!");
       return;
     }
-    if (newId !== oldId && areas.find((a) => a.id === newId)) {
-      showWarning("Trùng ID", "ID khu vực đã tồn tại!");
-      return;
+    try {
+      const updated = await apiUpdateArea(oldId, {
+        name: editAreaForm.name,
+        description: editAreaForm.description,
+        manager_id: editAreaForm.managerId
+          ? parseInt(editAreaForm.managerId)
+          : null,
+      });
+      setAreas((prev) => prev.map((a) => (a.id === oldId ? updated : a)));
+      setEditAreaId(null);
+    } catch {
+      showWarning("Lỗi", "Không thể cập nhật khu vực. Vui lòng thử lại!");
     }
-    setAreas((prev) =>
-      prev.map((a) =>
-        a.id === oldId
-          ? {
-              ...a,
-              id: newId,
-              name: editAreaForm.name,
-              description: editAreaForm.description,
-              manager: editAreaForm.manager,
-            }
-          : a,
-      ),
-    );
-    if (newId !== oldId)
-      setDryers((prev) =>
-        prev.map((d) => (d.areaId === oldId ? { ...d, areaId: newId } : d)),
-      );
-    setEditAreaId(null);
   };
 
   const deleteArea = (areaId: string) => {
@@ -342,106 +354,92 @@ export function DeviceManagement() {
     showConfirm(
       "Xóa khu vực",
       "Bạn có chắc chắn muốn xóa khu vực này? Thao tác này không thể hoàn tác.",
-      () => {
-        setAreas((prev) => prev.filter((a) => a.id !== areaId));
-        closeConfirm();
+      async () => {
+        try {
+          await apiDeleteArea(areaId);
+          setAreas((prev) => prev.filter((a) => a.id !== areaId));
+          closeConfirm();
+        } catch (e: any) {
+          closeConfirm();
+          showWarning("Lỗi", e.message || "Không thể xóa khu vực");
+        }
       },
     );
   };
 
   // ===== DEVICE TYPE CRUD =====
-  const addDeviceType = () => {
+  const addDeviceType = async () => {
     if (!deviceTypeForm.name.trim()) return;
-    const id = deviceTypeForm.id.trim() || `DT-${String(Date.now()).slice(-6)}`;
-    if (deviceTypes.find((dt) => dt.id === id)) {
-      showWarning("Trùng ID", "ID loại thiết bị đã tồn tại!");
-      return;
-    }
-    const valueRange =
-      !deviceTypeForm.rangeNA &&
-      deviceTypeForm.minValue &&
-      deviceTypeForm.maxValue
-        ? {
-            min: parseFloat(deviceTypeForm.minValue),
-            max: parseFloat(deviceTypeForm.maxValue),
-          }
-        : undefined;
-    setDeviceTypes((prev) => [
-      ...prev,
-      {
-        id,
+    try {
+      const created = await apiCreateDeviceType({
         name: deviceTypeForm.name,
         description: deviceTypeForm.description,
-        unit: deviceTypeForm.unitNA ? "N/A" : deviceTypeForm.unit,
+        unit: deviceTypeForm.unitNA ? null : deviceTypeForm.unit || null,
+        min_value:
+          !deviceTypeForm.rangeNA && deviceTypeForm.minValue
+            ? parseFloat(deviceTypeForm.minValue)
+            : null,
+        max_value:
+          !deviceTypeForm.rangeNA && deviceTypeForm.maxValue
+            ? parseFloat(deviceTypeForm.maxValue)
+            : null,
         category: deviceTypeForm.category,
-        valueType: deviceTypeForm.valueType,
-        valueRange,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setDeviceTypeForm({
-      id: "",
-      name: "",
-      description: "",
-      unit: "",
-      unitNA: false,
-      category: "sensor",
-      valueType: "number",
-      minValue: "",
-      maxValue: "",
-      rangeNA: false,
-    });
-    setAddDeviceTypeOpen(false);
+      });
+      setDeviceTypes((prev) => [
+        ...prev,
+        { ...created, valueType: deviceTypeForm.valueType },
+      ]);
+      setDeviceTypeForm({
+        id: "",
+        name: "",
+        description: "",
+        unit: "",
+        unitNA: false,
+        category: "sensor",
+        valueType: "number",
+        minValue: "",
+        maxValue: "",
+        rangeNA: false,
+      });
+      setAddDeviceTypeOpen(false);
+    } catch {
+      showWarning("Lỗi", "Không thể tạo loại thiết bị. Vui lòng thử lại!");
+    }
   };
 
-  const saveEditDeviceType = (oldId: string) => {
-    const newId = editDeviceTypeForm.id.trim();
-    if (!newId || !editDeviceTypeForm.name) {
-      showWarning("Thiếu thông tin", "Vui lòng nhập đầy đủ thông tin!");
+  const saveEditDeviceType = async (oldId: string) => {
+    if (!editDeviceTypeForm.name) {
+      showWarning("Thiếu thông tin", "Vui lòng nhập tên loại thiết bị!");
       return;
     }
-    if (newId !== oldId && deviceTypes.find((dt) => dt.id === newId)) {
-      showWarning("Trùng ID", "ID loại thiết bị đã tồn tại!");
-      return;
-    }
-    const valueRange =
-      !editDeviceTypeForm.rangeNA &&
-      editDeviceTypeForm.minValue &&
-      editDeviceTypeForm.maxValue
-        ? {
-            min: parseFloat(editDeviceTypeForm.minValue),
-            max: parseFloat(editDeviceTypeForm.maxValue),
-          }
-        : undefined;
-    setDeviceTypes((prev) =>
-      prev.map((dt) =>
-        dt.id === oldId
-          ? {
-              ...dt,
-              id: newId,
-              name: editDeviceTypeForm.name,
-              description: editDeviceTypeForm.description,
-              unit: editDeviceTypeForm.unitNA ? "N/A" : editDeviceTypeForm.unit,
-              category: editDeviceTypeForm.category,
-              valueType: editDeviceTypeForm.valueType,
-              valueRange,
-            }
-          : dt,
-      ),
-    );
-    if (newId !== oldId) {
-      setDryers((prev) =>
-        prev.map((dryer) => ({
-          ...dryer,
-          devices: dryer.devices.map((device) =>
-            device.deviceTypeId === oldId
-              ? { ...device, deviceTypeId: newId }
-              : device,
-          ),
-        })),
+    try {
+      const updated = await apiUpdateDeviceType(oldId, {
+        name: editDeviceTypeForm.name,
+        description: editDeviceTypeForm.description,
+        unit: editDeviceTypeForm.unitNA
+          ? null
+          : editDeviceTypeForm.unit || null,
+        min_value:
+          !editDeviceTypeForm.rangeNA && editDeviceTypeForm.minValue
+            ? parseFloat(editDeviceTypeForm.minValue)
+            : null,
+        max_value:
+          !editDeviceTypeForm.rangeNA && editDeviceTypeForm.maxValue
+            ? parseFloat(editDeviceTypeForm.maxValue)
+            : null,
+        category: editDeviceTypeForm.category,
+      });
+      setDeviceTypes((prev) =>
+        prev.map((dt) =>
+          dt.id === oldId
+            ? { ...updated, valueType: editDeviceTypeForm.valueType }
+            : dt,
+        ),
       );
+      setEditDeviceTypeId(null);
+    } catch {
+      showWarning("Lỗi", "Không thể cập nhật loại thiết bị. Vui lòng thử lại!");
     }
-    setEditDeviceTypeId(null);
   };
 
   const deleteDeviceType = (deviceTypeId: string) => {
@@ -458,15 +456,21 @@ export function DeviceManagement() {
     showConfirm(
       "Xóa loại thiết bị",
       "Bạn có chắc chắn muốn xóa loại thiết bị này? Thao tác này không thể hoàn tác.",
-      () => {
-        setDeviceTypes((prev) => prev.filter((dt) => dt.id !== deviceTypeId));
-        closeConfirm();
+      async () => {
+        try {
+          await apiDeleteDeviceType(deviceTypeId);
+          setDeviceTypes((prev) => prev.filter((dt) => dt.id !== deviceTypeId));
+          closeConfirm();
+        } catch (e: any) {
+          closeConfirm();
+          showWarning("Lỗi", e.message || "Không thể xóa loại thiết bị");
+        }
       },
     );
   };
 
   // ===== DEVICE CRUD =====
-  const addDevice = () => {
+  const addDevice = async () => {
     if (!deviceForm.name.trim() || !deviceForm.deviceTypeId) {
       showWarning(
         "Thiếu thông tin",
@@ -479,58 +483,76 @@ export function DeviceManagement() {
     if (!dryer) return;
     const deviceId =
       deviceForm.id.trim() || `${dryerId}-${String(Date.now()).slice(-6)}`;
-    if (dryer.devices.find((d) => d.id === deviceId)) {
-      showWarning("Trùng ID", "ID thiết bị đã tồn tại trong máy sấy này!");
-      return;
+    try {
+      const created = await apiCreateDevice(dryerId, {
+        id: deviceId,
+        name: deviceForm.name,
+        type_id: parseInt(deviceForm.deviceTypeId) || 0,
+        power_status: null,
+      });
+      setDryers((prev) =>
+        prev.map((d) =>
+          d.id === dryerId
+            ? {
+                ...d,
+                devices: [
+                  ...d.devices,
+                  {
+                    ...created,
+                    power: deviceForm.power
+                      ? parseFloat(deviceForm.power)
+                      : undefined,
+                  },
+                ],
+              }
+            : d,
+        ),
+      );
+      setDeviceForm({ id: "", name: "", deviceTypeId: "", power: "" });
+      setAddDeviceOpen(false);
+    } catch (e: any) {
+      showWarning(
+        "Lỗi",
+        e.message || "Không thể thêm thiết bị. Vui lòng thử lại!",
+      );
     }
-    const newDevice: Device = {
-      id: deviceId,
-      name: deviceForm.name,
-      deviceTypeId: deviceForm.deviceTypeId,
-      status: false,
-      installDate: new Date().toISOString().split("T")[0],
-      power: deviceForm.power ? parseFloat(deviceForm.power) : undefined,
-    };
-    setDryers((prev) =>
-      prev.map((d) =>
-        d.id === dryerId ? { ...d, devices: [...d.devices, newDevice] } : d,
-      ),
-    );
-    setDeviceForm({ id: "", name: "", deviceTypeId: "", power: "" });
-    setAddDeviceOpen(false);
   };
 
-  const saveEditDevice = (dryerId: string, oldDeviceId: string) => {
-    const newId = editDeviceForm.id.trim();
-    if (!newId || !editDeviceForm.name || !editDeviceForm.deviceTypeId) {
+  const saveEditDevice = async (dryerId: string, oldDeviceId: string) => {
+    if (!editDeviceForm.name || !editDeviceForm.deviceTypeId) {
       showWarning("Thiếu thông tin", "Vui lòng nhập đầy đủ thông tin!");
       return;
     }
-    setDryers((prev) =>
-      prev.map((d) =>
-        d.id === dryerId
-          ? {
-              ...d,
-              devices: d.devices.map((device) =>
-                device.id === oldDeviceId
-                  ? {
-                      ...device,
-                      id: newId,
-                      name: editDeviceForm.name,
-                      deviceTypeId: editDeviceForm.deviceTypeId,
-                      installDate: editDeviceForm.installDate,
-                      power: editDeviceForm.power
-                        ? parseFloat(editDeviceForm.power)
-                        : undefined,
-                    }
-                  : device,
-              ),
-            }
-          : d,
-      ),
-    );
-    setEditDeviceId(null);
-    setEditDeviceDryerId(null);
+    try {
+      const updated = await apiUpdateDevice(dryerId, oldDeviceId, {
+        name: editDeviceForm.name,
+        type_id: parseInt(editDeviceForm.deviceTypeId) || 0,
+        install_date: editDeviceForm.installDate || null,
+      });
+      setDryers((prev) =>
+        prev.map((d) =>
+          d.id === dryerId
+            ? {
+                ...d,
+                devices: d.devices.map((device) =>
+                  device.id === oldDeviceId
+                    ? {
+                        ...updated,
+                        power: editDeviceForm.power
+                          ? parseFloat(editDeviceForm.power)
+                          : undefined,
+                      }
+                    : device,
+                ),
+              }
+            : d,
+        ),
+      );
+      setEditDeviceId(null);
+      setEditDeviceDryerId(null);
+    } catch {
+      showWarning("Lỗi", "Không thể cập nhật thiết bị. Vui lòng thử lại!");
+    }
   };
 
   const deleteDevice = (
@@ -538,64 +560,79 @@ export function DeviceManagement() {
     deviceId: string,
     deviceName: string,
   ) => {
-    const dryer = dryers.find((d) => d.id === dryerId);
     showConfirm(
       "Xóa thiết bị",
       `Bạn có chắc chắn muốn xóa thiết bị "${deviceName}"?`,
-      () => {
-        setDryers((prev) =>
-          prev.map((d) =>
-            d.id === dryerId
-              ? {
-                  ...d,
-                  devices: d.devices.filter((device) => device.id !== deviceId),
-                }
-              : d,
-          ),
-        );
-        closeConfirm();
+      async () => {
+        try {
+          await apiDeleteDevice(dryerId, deviceId);
+          setDryers((prev) =>
+            prev.map((d) =>
+              d.id === dryerId
+                ? {
+                    ...d,
+                    devices: d.devices.filter(
+                      (device) => device.id !== deviceId,
+                    ),
+                  }
+                : d,
+            ),
+          );
+          closeConfirm();
+        } catch (e: any) {
+          closeConfirm();
+          showWarning("Lỗi", e.message || "Không thể xóa thiết bị");
+        }
       },
     );
   };
 
   // ===== DRYER CRUD =====
-  const saveEditDryer = (oldId: string) => {
-    const newId = editDryerForm.id.trim();
-    if (!newId || !editDryerForm.name || !editDryerForm.areaId) {
+  const saveEditDryer = async (oldId: string) => {
+    if (!editDryerForm.name || !editDryerForm.areaId) {
       showWarning("Thiếu thông tin", "Vui lòng nhập đầy đủ thông tin!");
       return;
     }
-    if (newId !== oldId && dryers.find((d) => d.id === newId)) {
-      showWarning("Trùng ID", "ID máy sấy đã tồn tại!");
-      return;
+    try {
+      const updated = await apiUpdateDryer(oldId, {
+        name: editDryerForm.name,
+        area_id: parseInt(editDryerForm.areaId),
+        capacity: editDryerForm.capacity
+          ? parseFloat(editDryerForm.capacity)
+          : null,
+        manager_id: editDryerForm.managerId
+          ? parseInt(editDryerForm.managerId)
+          : null,
+      });
+      setDryers((prev) =>
+        prev.map((d) =>
+          d.id === oldId
+            ? {
+                ...updated,
+                devices: d.devices,
+              }
+            : d,
+        ),
+      );
+      setEditDryerId(null);
+    } catch {
+      showWarning("Lỗi", "Không thể cập nhật máy sấy. Vui lòng thử lại!");
     }
-    setDryers((prev) =>
-      prev.map((d) =>
-        d.id === oldId
-          ? {
-              ...d,
-              id: newId,
-              name: editDryerForm.name,
-              areaId: editDryerForm.areaId,
-              operator: editDryerForm.operator,
-              capacity: editDryerForm.capacity
-                ? parseFloat(editDryerForm.capacity)
-                : undefined,
-            }
-          : d,
-      ),
-    );
-    setEditDryerId(null);
   };
 
   const deleteDryer = (dryerId: string, dryerName: string) => {
-    const dryer = dryers.find((d) => d.id === dryerId);
     showConfirm(
       "Xóa máy sấy",
       `Bạn có chắc chắn muốn xóa máy sấy "${dryerName}" và tất cả thiết bị bên trong?`,
-      () => {
-        setDryers((prev) => prev.filter((d) => d.id !== dryerId));
-        closeConfirm();
+      async () => {
+        try {
+          await apiDeleteDryer(dryerId);
+          setDryers((prev) => prev.filter((d) => d.id !== dryerId));
+          closeConfirm();
+        } catch (e: any) {
+          closeConfirm();
+          showWarning("Lỗi", e.message || "Không thể xóa máy sấy");
+        }
       },
     );
   };
@@ -607,36 +644,38 @@ export function DeviceManagement() {
     setExpandedDryers(new Set([dryerId]));
   };
 
-  const addDryerFromArea = () => {
+  const addDryerFromArea = async () => {
     if (!addDryerFromAreaId || !addDryerFromAreaForm.name.trim()) {
       showWarning("Thiếu thông tin", "Vui lòng nhập tên máy sấy!");
       return;
     }
-    const id =
-      addDryerFromAreaForm.id.trim() || `DRY-${String(Date.now()).slice(-6)}`;
-    if (dryers.find((d) => d.id === id)) {
-      showWarning("Trùng ID", "ID máy sấy đã tồn tại!");
-      return;
-    }
-    setDryers((prev) => [
-      ...prev,
-      {
-        id,
+    try {
+      const created = await apiCreateDryer({
         name: addDryerFromAreaForm.name,
-        areaId: addDryerFromAreaId,
-        operator: addDryerFromAreaForm.operator,
+        area_id: parseInt(addDryerFromAreaId),
         capacity: addDryerFromAreaForm.capacity
           ? parseFloat(addDryerFromAreaForm.capacity)
-          : undefined,
-        status: "inactive" as DryerStatus,
-        mode: "manual" as DryerMode,
-        devices: [],
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setAddDryerFromAreaForm({ id: "", name: "", operator: "", capacity: "" });
-    setAddDryerFromAreaId(null);
-    setAddDryerFromAreaOpen(false);
+          : null,
+        manager_id: addDryerFromAreaForm.managerId
+          ? parseInt(addDryerFromAreaForm.managerId)
+          : null,
+        status: "off",
+      });
+      setDryers((prev) => [...prev, created]);
+      setAddDryerFromAreaForm({
+        id: "",
+        name: "",
+        managerId: "",
+        capacity: "",
+      });
+      setAddDryerFromAreaId(null);
+      setAddDryerFromAreaOpen(false);
+    } catch (e: any) {
+      showWarning(
+        "Lỗi",
+        e.message || "Không thể tạo máy sấy. Vui lòng thử lại!",
+      );
+    }
   };
 
   // ===== FILTERING =====
@@ -646,7 +685,7 @@ export function DeviceManagement() {
       area.id.toLowerCase().includes(q) ||
       area.name.toLowerCase().includes(q) ||
       area.description.toLowerCase().includes(q) ||
-      area.manager?.toLowerCase().includes(q),
+      getUserName(area.managerId)?.toLowerCase().includes(q),
   );
   const filteredDeviceTypes = deviceTypes.filter(
     (dt) =>
@@ -658,7 +697,7 @@ export function DeviceManagement() {
     (d) =>
       d.id.toLowerCase().includes(q) ||
       d.name.toLowerCase().includes(q) ||
-      d.operator?.toLowerCase().includes(q) ||
+      getUserName(d.managerId)?.toLowerCase().includes(q) ||
       areas
         .find((a) => a.id === d.areaId)
         ?.name.toLowerCase()
@@ -831,29 +870,25 @@ export function DeviceManagement() {
                                     Người quản lý
                                   </label>
                                   <select
-                                    value={editAreaForm.manager}
+                                    value={editAreaForm.managerId}
                                     onChange={(e) =>
                                       setEditAreaForm((p) => ({
                                         ...p,
-                                        manager: e.target.value,
+                                        managerId: e.target.value,
                                       }))
                                     }
                                     className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                   >
                                     <option value="">-- Chưa chọn --</option>
-                                    {users
-                                      .filter(
-                                        (u) => u.active && u.role !== "viewer",
-                                      )
-                                      .map((u) => (
-                                        <option key={u.id} value={u.name}>
-                                          {u.name} (
-                                          {u.role === "admin"
-                                            ? "Quản trị"
-                                            : "Vận hành"}
-                                          )
-                                        </option>
-                                      ))}
+                                    {activeUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.full_name} (
+                                        {u.role === "admin"
+                                          ? "Quản trị"
+                                          : "Vận hành"}
+                                        )
+                                      </option>
+                                    ))}
                                   </select>
                                 </div>
                               </div>
@@ -864,7 +899,9 @@ export function DeviceManagement() {
                                 </h3>
                                 <p className="text-sm text-slate-500">
                                   Mã: {area.id} | Quản lý:{" "}
-                                  {area.manager || "Chưa gán"}
+                                  {area.manager ||
+                                    getUserName(area.managerId) ||
+                                    "Chưa gán"}
                                 </p>
                                 {area.description && (
                                   <p className="text-sm text-slate-600 mt-1">
@@ -906,7 +943,7 @@ export function DeviceManagement() {
                                     id: area.id,
                                     name: area.name,
                                     description: area.description,
-                                    manager: area.manager || "",
+                                    managerId: area.managerId?.toString() || "",
                                   });
                                 }}
                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
@@ -961,7 +998,10 @@ export function DeviceManagement() {
                                   </div>
                                   <div className="text-xs text-slate-500 space-y-1">
                                     <p>Mã: {dryer.id}</p>
-                                    <p>Vận hành: {dryer.operator || "N/A"}</p>
+                                    <p>
+                                      Vận hành:{" "}
+                                      {getUserName(dryer.managerId) || "N/A"}
+                                    </p>
                                     <p>
                                       Thiết bị: {dryer.devices?.length || 0}
                                     </p>
@@ -1126,7 +1166,7 @@ export function DeviceManagement() {
                               className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                             >
                               <option value="sensor">Cảm biến</option>
-                              <option value="actuator">
+                              <option value="controller">
                                 Thiết bị điều khiển
                               </option>
                             </select>
@@ -1447,16 +1487,35 @@ export function DeviceManagement() {
                                     ))}
                                   </select>
                                 </div>
-                                <EditField
-                                  label="Người vận hành"
-                                  value={editDryerForm.operator}
-                                  onChange={(v) =>
-                                    setEditDryerForm((p) => ({
-                                      ...p,
-                                      operator: v,
-                                    }))
-                                  }
-                                />
+                                <div>
+                                  <label
+                                    className="text-xs text-slate-500 block mb-1"
+                                    style={{ fontWeight: 600 }}
+                                  >
+                                    Người vận hành
+                                  </label>
+                                  <select
+                                    value={editDryerForm.managerId}
+                                    onChange={(e) =>
+                                      setEditDryerForm((p) => ({
+                                        ...p,
+                                        managerId: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                  >
+                                    <option value="">-- Chưa chọn --</option>
+                                    {activeUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.full_name} (
+                                        {u.role === "admin"
+                                          ? "Quản trị"
+                                          : "Vận hành"}
+                                        )
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                                 <EditField
                                   label="Sức chứa (kg)"
                                   value={editDryerForm.capacity}
@@ -1478,7 +1537,11 @@ export function DeviceManagement() {
                                   <span>Mã: {dryer.id}</span>
                                   <span>Khu vực: {area?.name || "N/A"}</span>
                                   {dryer.operator && (
-                                    <span>Vận hành: {dryer.operator}</span>
+                                    <span>
+                                      Vận hành:{" "}
+                                      {getUserName(dryer.managerId) ||
+                                        dryer.operator}
+                                    </span>
                                   )}
                                   <StatusBadge status={dryer.status} />
                                 </div>
@@ -1517,7 +1580,8 @@ export function DeviceManagement() {
                                     id: dryer.id,
                                     name: dryer.name,
                                     areaId: dryer.areaId,
-                                    operator: dryer.operator || "",
+                                    managerId:
+                                      dryer.managerId?.toString() || "",
                                     capacity: dryer.capacity?.toString() || "",
                                   });
                                 }}
@@ -1859,21 +1923,19 @@ export function DeviceManagement() {
                   Người quản lý
                 </label>
                 <select
-                  value={areaForm.manager}
+                  value={areaForm.managerId}
                   onChange={(e) =>
-                    setAreaForm((p) => ({ ...p, manager: e.target.value }))
+                    setAreaForm((p) => ({ ...p, managerId: e.target.value }))
                   }
                   className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="">-- Chưa chọn --</option>
-                  {users
-                    .filter((u) => u.active && u.role !== "viewer")
-                    .map((u) => (
-                      <option key={u.id} value={u.name}>
-                        {u.name} ({u.role === "admin" ? "Quản trị" : "Vận hành"}
-                        )
-                      </option>
-                    ))}
+                  {activeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name} (
+                      {u.role === "admin" ? "Quản trị" : "Vận hành"})
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1987,7 +2049,7 @@ export function DeviceManagement() {
                   className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   <option value="sensor">Cảm biến</option>
-                  <option value="actuator">Thiết bị điều khiển</option>
+                  <option value="controller">Thiết bị điều khiển</option>
                 </select>
               </div>
               <div>
@@ -2216,14 +2278,32 @@ export function DeviceManagement() {
                 placeholder="Nhập tên máy sấy"
                 required
               />
-              <EditField
-                label="Người vận hành"
-                value={addDryerFromAreaForm.operator}
-                onChange={(v) =>
-                  setAddDryerFromAreaForm((p) => ({ ...p, operator: v }))
-                }
-                placeholder="Tên người vận hành"
-              />
+              <div>
+                <label
+                  className="text-xs text-slate-500 block mb-1"
+                  style={{ fontWeight: 600 }}
+                >
+                  Người vận hành
+                </label>
+                <select
+                  value={addDryerFromAreaForm.managerId}
+                  onChange={(e) =>
+                    setAddDryerFromAreaForm((p) => ({
+                      ...p,
+                      managerId: e.target.value,
+                    }))
+                  }
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">-- Chưa chọn --</option>
+                  {activeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name} (
+                      {u.role === "admin" ? "Quản trị" : "Vận hành"})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <EditField
                 label="Sức chứa (kg)"
                 value={addDryerFromAreaForm.capacity}

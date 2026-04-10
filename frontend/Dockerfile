@@ -10,9 +10,11 @@ RUN npm ci
 # Copy toàn bộ source và build production
 COPY . .
 
-# (Tuỳ chọn) Nếu frontend cần URL của backend, truyền vào lúc build:
-# ARG VITE_API_URL=http://localhost:3000
-# ENV VITE_API_URL=$VITE_API_URL
+# URL backend truyền vào lúc build — Vite bake vào bundle JS
+# Docker: VITE_GATEWAY_URL="" → URL tương đối → nginx proxy tới backend
+# Local dev: không set → fallback "http://localhost:8001"
+ARG VITE_GATEWAY_URL=""
+ENV VITE_GATEWAY_URL=$VITE_GATEWAY_URL
 
 RUN npm run build
 

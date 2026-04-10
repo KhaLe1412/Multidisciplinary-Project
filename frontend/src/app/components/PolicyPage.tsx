@@ -32,7 +32,17 @@ import {
   AlertTriangle,
   Copy,
   Settings2,
+  Loader2,
 } from "lucide-react";
+import {
+  apiCreateCrop,
+  apiUpdateCrop,
+  apiDeleteCrop,
+  apiSaveSchedule,
+  apiDeleteSchedule,
+  apiSaveRule,
+  apiDeleteRule,
+} from "../api/policyApi";
 
 type Tab = "schedules" | "fruits" | "rules";
 
@@ -63,7 +73,7 @@ function ActionEditor({
 }) {
   const actuatorObjs = objects.filter((o) => {
     const dt = allDeviceTypes.find((t) => t.id === o.deviceTypeId);
-    return dt?.category === "actuator";
+    return dt?.category === "controller";
   });
 
   const add = () => {
@@ -297,6 +307,7 @@ export function PolicyPage() {
   const [tab, setTab] = useState<Tab>("schedules");
   const [search, setSearch] = useState("");
   const q = search.toLowerCase();
+  const [isSaving, setIsSaving] = useState(false);
 
   // Confirm dialog
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -326,36 +337,46 @@ export function PolicyPage() {
     createdAt: new Date().toISOString(),
   });
 
-  const saveSchedule = () => {
+  const saveSchedule = async () => {
     if (!editingSchedule || !editingSchedule.name.trim()) return;
-    if (editingSchedule.id) {
+    setIsSaving(true);
+    try {
+      const saved = await apiSaveSchedule(editingSchedule);
       setSchedules((prev) =>
-        prev.map((s) => (s.id === editingSchedule.id ? editingSchedule : s)),
+        editingSchedule.id
+          ? prev.map((s) => (s.id === editingSchedule.id ? saved : s))
+          : [...prev, saved],
       );
-    } else {
-      const ns = { ...editingSchedule, id: `SCH-${uid()}` };
-      setSchedules((prev) => [...prev, ns]);
-    }
-    addLog({
-      eventType: "policy_management",
-      time: new Date().toISOString(),
-      user: currentUser!.name,
-      description: `${editingSchedule.id ? "Cập nhật" : "Tạo"} lịch trình "${editingSchedule.name}"`,
-      severity: "info",
-    });
-    setEditingSchedule(null);
-  };
-
-  const deleteSchedule = (s: Schedule) =>
-    showConfirm("Xóa lịch trình", `Xóa "${s.name}"?`, () => {
-      setSchedules((prev) => prev.filter((x) => x.id !== s.id));
       addLog({
         eventType: "policy_management",
         time: new Date().toISOString(),
         user: currentUser!.name,
-        description: `Xóa lịch trình "${s.name}"`,
-        severity: "warning",
+        description: `${editingSchedule.id ? "Cập nhật" : "Tạo"} lịch trình "${editingSchedule.name}"`,
+        severity: "info",
       });
+      setEditingSchedule(null);
+    } catch (e) {
+      alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteSchedule = (s: Schedule) =>
+    showConfirm("Xóa lịch trình", `Xóa "${s.name}"?`, async () => {
+      try {
+        await apiDeleteSchedule(s.id);
+        setSchedules((prev) => prev.filter((x) => x.id !== s.id));
+        addLog({
+          eventType: "policy_management",
+          time: new Date().toISOString(),
+          user: currentUser!.name,
+          description: `Xóa lịch trình "${s.name}"`,
+          severity: "warning",
+        });
+      } catch (e) {
+        alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+      }
     });
 
   // Phase helpers
@@ -402,36 +423,58 @@ export function PolicyPage() {
     createdAt: new Date().toISOString().split("T")[0],
   });
 
-  const saveFruit = () => {
+  const saveFruit = async () => {
     if (!editingFruit || !editingFruit.name.trim()) return;
-    if (editingFruit.id) {
+    setIsSaving(true);
+    try {
+      let saved: Fruit;
+      if (editingFruit.id) {
+        saved = await apiUpdateCrop(
+          editingFruit.id,
+          editingFruit.name,
+          editingFruit.description,
+        );
+      } else {
+        saved = await apiCreateCrop(
+          editingFruit.name,
+          editingFruit.description,
+        );
+      }
       setFruits((prev) =>
-        prev.map((f) => (f.id === editingFruit.id ? editingFruit : f)),
+        editingFruit.id
+          ? prev.map((f) => (f.id === editingFruit.id ? saved : f))
+          : [...prev, saved],
       );
-    } else {
-      const nf = { ...editingFruit, id: `FRT-${uid()}` };
-      setFruits((prev) => [...prev, nf]);
-    }
-    addLog({
-      eventType: "policy_management",
-      time: new Date().toISOString(),
-      user: currentUser!.name,
-      description: `${editingFruit.id ? "Cập nhật" : "Tạo"} nông sản "${editingFruit.name}"`,
-      severity: "info",
-    });
-    setEditingFruit(null);
-  };
-
-  const deleteFruit = (f: Fruit) =>
-    showConfirm("Xóa nông sản", `Xóa "${f.name}"?`, () => {
-      setFruits((prev) => prev.filter((x) => x.id !== f.id));
       addLog({
         eventType: "policy_management",
         time: new Date().toISOString(),
         user: currentUser!.name,
-        description: `Xóa nông sản "${f.name}"`,
-        severity: "warning",
+        description: `${editingFruit.id ? "Cập nhật" : "Tạo"} nông sản "${editingFruit.name}"`,
+        severity: "info",
       });
+      setEditingFruit(null);
+    } catch (e) {
+      alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteFruit = (f: Fruit) =>
+    showConfirm("Xóa nông sản", `Xóa "${f.name}"?`, async () => {
+      try {
+        await apiDeleteCrop(f.id);
+        setFruits((prev) => prev.filter((x) => x.id !== f.id));
+        addLog({
+          eventType: "policy_management",
+          time: new Date().toISOString(),
+          user: currentUser!.name,
+          description: `Xóa nông sản "${f.name}"`,
+          severity: "warning",
+        });
+      } catch (e) {
+        alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+      }
     });
 
   // â”€â”€â”€ ALERT RULE STATE â”€â”€â”€â”€
@@ -449,42 +492,53 @@ export function PolicyPage() {
     active: true,
   });
 
-  const saveRule = () => {
+  const saveRule = async () => {
     if (!editingRule || !editingRule.name.trim()) return;
-    if (editingRule.id) {
+    setIsSaving(true);
+    try {
+      const saved = await apiSaveRule(editingRule);
       setAlertRules((prev) =>
-        prev.map((r) => (r.id === editingRule.id ? editingRule : r)),
+        editingRule.id
+          ? prev.map((r) => (r.id === editingRule.id ? saved : r))
+          : [...prev, saved],
       );
-    } else {
-      const nr = { ...editingRule, id: `ALR-${uid()}` };
-      setAlertRules((prev) => [...prev, nr]);
-    }
-    addLog({
-      eventType: "policy_management",
-      time: new Date().toISOString(),
-      user: currentUser!.name,
-      description: `${editingRule.id ? "Cập nhật" : "Tạo"} quy tắc cảnh báo "${editingRule.name}"`,
-      severity: "info",
-    });
-    setEditingRule(null);
-  };
-
-  const deleteRule = (r: AlertRule) =>
-    showConfirm("Xóa quy tắc", `Xóa "${r.name}"?`, () => {
-      setAlertRules((prev) => prev.filter((x) => x.id !== r.id));
       addLog({
         eventType: "policy_management",
         time: new Date().toISOString(),
         user: currentUser!.name,
-        description: `Xóa quy tắc cảnh báo "${r.name}"`,
-        severity: "warning",
+        description: `${editingRule.id ? "Cập nhật" : "Tạo"} quy tắc cảnh báo "${editingRule.name}"`,
+        severity: "info",
       });
+      setEditingRule(null);
+    } catch (e) {
+      alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteRule = (r: AlertRule) =>
+    showConfirm("Xóa quy tắc", `Xóa "${r.name}"?`, async () => {
+      try {
+        await apiDeleteRule(r.id);
+        setAlertRules((prev) => prev.filter((x) => x.id !== r.id));
+        addLog({
+          eventType: "policy_management",
+          time: new Date().toISOString(),
+          user: currentUser!.name,
+          description: `Xóa quy tắc cảnh báo "${r.name}"`,
+          severity: "warning",
+        });
+      } catch (e) {
+        alert(`Lỗi: ${e instanceof Error ? e.message : String(e)}`);
+      }
     });
 
   const addPair = () => {
     if (!editingRule) return;
     const np: AlertConditionActionPair = {
       id: `CP-${uid()}`,
+      name: "",
       conditions: [],
       actions: [],
     };
@@ -871,7 +925,7 @@ export function PolicyPage() {
                             className="text-xs text-slate-500 mb-2"
                             style={{ fontWeight: 600 }}
                           >
-                            Cặp {pi + 1}
+                            {pair.name || `Cặp ${pi + 1}`}
                           </p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
@@ -1122,14 +1176,19 @@ export function PolicyPage() {
               </button>
               <button
                 onClick={saveSchedule}
-                disabled={!editingSchedule.name.trim()}
+                disabled={!editingSchedule.name.trim() || isSaving}
                 className="px-4 py-2 rounded-xl text-sm text-white disabled:opacity-50 flex items-center gap-2"
                 style={{
                   background: "linear-gradient(135deg, #3b82f6, #2563eb)",
                   fontWeight: 600,
                 }}
               >
-                <Check size={14} /> Lưu
+                {isSaving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                {isSaving ? "Đang lưu..." : "Lưu"}
               </button>
             </div>
           </div>
@@ -1193,14 +1252,19 @@ export function PolicyPage() {
               </button>
               <button
                 onClick={saveFruit}
-                disabled={!editingFruit.name.trim()}
+                disabled={!editingFruit.name.trim() || isSaving}
                 className="px-4 py-2 rounded-xl text-sm text-white disabled:opacity-50 flex items-center gap-2"
                 style={{
                   background: "linear-gradient(135deg, #3b82f6, #2563eb)",
                   fontWeight: 600,
                 }}
               >
-                <Check size={14} /> Lưu
+                {isSaving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                {isSaving ? "Đang lưu..." : "Lưu"}
               </button>
             </div>
           </div>
@@ -1419,6 +1483,20 @@ export function PolicyPage() {
                           <Trash2 size={14} />
                         </button>
                       </div>
+                      <div className="mb-3">
+                        <p className="text-xs text-slate-500 mb-1 font-semibold">
+                          Tên cặp
+                        </p>
+                        <input
+                          type="text"
+                          placeholder="Nhập tên mô tả cặp điều kiện..."
+                          value={pair.name ?? ""}
+                          onChange={(e) =>
+                            updatePair(idx, { ...pair, name: e.target.value })
+                          }
+                          className="w-full text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                        />
+                      </div>
                       <div className="space-y-3">
                         <div>
                           <p className="text-xs text-amber-600 mb-1.5 flex items-center gap-1 font-semibold">
@@ -1461,14 +1539,19 @@ export function PolicyPage() {
               </button>
               <button
                 onClick={saveRule}
-                disabled={!editingRule.name.trim()}
+                disabled={!editingRule.name.trim() || isSaving}
                 className="px-4 py-2 rounded-xl text-sm text-white disabled:opacity-50 flex items-center gap-2"
                 style={{
                   background: "linear-gradient(135deg, #3b82f6, #2563eb)",
                   fontWeight: 600,
                 }}
               >
-                <Check size={14} /> Lưu
+                {isSaving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Check size={14} />
+                )}
+                {isSaving ? "Đang lưu..." : "Lưu"}
               </button>
             </div>
           </div>
@@ -1593,4 +1676,3 @@ function PhaseEditor({
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-// ======== DEVICE TYPE ========
+﻿// ======== DEVICE TYPE ========
 export interface DeviceTypeModel {
   id: string;
   name: string;
@@ -8,7 +8,7 @@ export interface DeviceTypeModel {
     min: number;
     max: number;
   };
-  category: "sensor" | "actuator";
+  category: "sensor" | "controller";
   valueType?: "number" | "boolean" | "text";
   createdAt: string;
 }
@@ -22,7 +22,7 @@ export type DeviceType =
   | "lcd"
   | "heater";
 export type DryerMode = "manual" | "threshold" | "schedule";
-export type DryerStatus = "inactive" | "on" | "active";
+export type DryerStatus = "off" | "on" | "running";
 
 export interface Device {
   id: string;
@@ -98,6 +98,7 @@ export interface AlertCondition {
 
 export interface AlertConditionActionPair {
   id: string;
+  name?: string;
   conditions: AlertCondition[]; // AND connected
   actions: PolicyAction[];
 }
@@ -131,6 +132,7 @@ export interface Area {
   name: string;
   description: string;
   manager?: string;
+  managerId?: number;
   createdAt: string;
 }
 
@@ -165,6 +167,7 @@ export interface Dryer {
   status: DryerStatus;
   areaId: string;
   operator?: string;
+  managerId?: number;
   mode: DryerMode;
   devices: Device[];
   activeBatch?: ActiveBatch;
@@ -216,7 +219,11 @@ export type LogEventType =
   | "device_management"
   | "policy_management"
   | "alert"
-  | "profile_change";
+  | "profile_change"
+  | "batch_start"
+  | "batch_end"
+  | "dryer_change"
+  | string;
 export type LogSeverity = "info" | "warning" | "error" | "success";
 
 export interface SystemLog {
@@ -226,7 +233,7 @@ export interface SystemLog {
   user: string;
   description: string;
   dryerId?: string;
-  severity: LogSeverity;
+  severity: LogSeverity | string;
 }
 
 // ======== BATCH RECORDS ========
@@ -308,7 +315,7 @@ export const initialDeviceTypes: DeviceTypeModel[] = [
     description: "Điều khiển luồng khí trong buồng sấy",
     unit: "%",
     valueRange: { min: 0, max: 100 },
-    category: "actuator",
+    category: "controller",
     createdAt: "2025-01-10",
   },
   {
@@ -316,7 +323,7 @@ export const initialDeviceTypes: DeviceTypeModel[] = [
     name: "Cửa điều khiển",
     description: "Điều khiển việc mở/đóng cửa buồng sấy",
     unit: "boolean",
-    category: "actuator",
+    category: "controller",
     createdAt: "2025-01-15",
   },
   {
@@ -324,7 +331,7 @@ export const initialDeviceTypes: DeviceTypeModel[] = [
     name: "Màn hình LCD",
     description: "Hiển thị thông tin trạng thái và thông báo",
     unit: "text",
-    category: "actuator",
+    category: "controller",
     createdAt: "2025-01-20",
   },
   {
@@ -333,7 +340,7 @@ export const initialDeviceTypes: DeviceTypeModel[] = [
     description: "Gia nhiệt cho buồng sấy đển nhiệt độ mong muốn",
     unit: "°C",
     valueRange: { min: 20, max: 100 },
-    category: "actuator",
+    category: "controller",
     createdAt: "2025-01-15",
   },
   {
@@ -341,9 +348,9 @@ export const initialDeviceTypes: DeviceTypeModel[] = [
     name: "Quạt gió (bật/tắt)",
     description: "Điều khiển quạt gió bật hoặc tắt",
     unit: "boolean",
-    category: "actuator",
+    category: "controller",
     createdAt: "2025-01-10",
-  }
+  },
 ];
 
 const makeDevices = (prefix: string): Device[] => [
@@ -461,7 +468,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-001",
     name: "Máy sấy A1",
-    status: "active",
+    status: "running",
     areaId: "AREA-001",
     operator: "Nguyễn Văn An",
     mode: "manual",
@@ -479,7 +486,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-002",
     name: "Máy sấy A2",
-    status: "active",
+    status: "running",
     areaId: "AREA-001",
     operator: "Trần Thị Bình",
     mode: "threshold",
@@ -504,7 +511,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-003",
     name: "Máy sấy B1",
-    status: "inactive",
+    status: "off",
     areaId: "AREA-002",
     mode: "manual",
     devices: makeDevices("DRY003"),
@@ -514,7 +521,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-004",
     name: "Máy sấy B2",
-    status: "active",
+    status: "running",
     areaId: "AREA-002",
     operator: "Lê Hoàng Cường",
     mode: "schedule",
@@ -539,7 +546,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-005",
     name: "Máy sấy C1",
-    status: "inactive",
+    status: "off",
     areaId: "AREA-003",
     mode: "manual",
     devices: makeDevices("DRY005"),
@@ -549,7 +556,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-006",
     name: "Máy sấy D1",
-    status: "active",
+    status: "running",
     areaId: "AREA-004",
     operator: "Phạm Minh Đức",
     mode: "threshold",
@@ -575,7 +582,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-007",
     name: "Máy sấy D2",
-    status: "inactive",
+    status: "off",
     areaId: "AREA-004",
     mode: "manual",
     devices: makeDevices("DRY007"),
@@ -596,7 +603,7 @@ export const initialDryers: Dryer[] = [
   {
     id: "DRY-009",
     name: "Máy sấy F1",
-    status: "inactive",
+    status: "off",
     areaId: "AREA-006",
     mode: "manual",
     devices: makeDevices("DRY009"),

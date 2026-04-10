@@ -90,15 +90,15 @@ function DryerInfoModal({
       >
         {/* Header */}
         <div
-          className={`p-5 ${dryer.status === "active" ? "bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-100" : dryer.status === "on" ? "bg-gradient-to-r from-blue-50 to-sky-50 border-b border-blue-100" : "bg-slate-50 border-b border-slate-100"}`}
+          className={`p-5 ${dryer.status === "running" ? "bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-100" : dryer.status === "on" ? "bg-gradient-to-r from-blue-50 to-sky-50 border-b border-blue-100" : "bg-slate-50 border-b border-slate-100"}`}
         >
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div
-                className={`w-12 h-12 rounded-xl flex items-center justify-center ${dryer.status === "active" ? "bg-green-100" : dryer.status === "on" ? "bg-blue-100" : "bg-slate-200"}`}
+                className={`w-12 h-12 rounded-xl flex items-center justify-center ${dryer.status === "running" ? "bg-green-100" : dryer.status === "on" ? "bg-blue-100" : "bg-slate-200"}`}
                 style={{
                   boxShadow:
-                    dryer.status === "active"
+                    dryer.status === "running"
                       ? "0 0 0 3px rgba(34,197,94,0.2)"
                       : "none",
                 }}
@@ -106,7 +106,7 @@ function DryerInfoModal({
                 <Cpu
                   size={22}
                   className={
-                    dryer.status === "active"
+                    dryer.status === "running"
                       ? "text-green-600"
                       : dryer.status === "on"
                         ? "text-blue-600"
@@ -123,13 +123,13 @@ function DryerInfoModal({
                 </h3>
                 <p className="text-xs text-slate-400">{dryer.id}</p>
                 <span
-                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full mt-1 ${dryer.status === "active" ? "bg-green-100 text-green-700" : dryer.status === "on" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}
+                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full mt-1 ${dryer.status === "running" ? "bg-green-100 text-green-700" : dryer.status === "on" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}
                   style={{ fontWeight: 600 }}
                 >
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${dryer.status === "active" ? "bg-green-500" : dryer.status === "on" ? "bg-blue-500" : "bg-slate-400"}`}
+                    className={`w-1.5 h-1.5 rounded-full ${dryer.status === "running" ? "bg-green-500" : dryer.status === "on" ? "bg-blue-500" : "bg-slate-400"}`}
                   />
-                  {dryer.status === "active"
+                  {dryer.status === "running"
                     ? "Đang hoạt động"
                     : dryer.status === "on"
                       ? "Bật"
@@ -319,7 +319,7 @@ export function Control() {
   const handleTogglePower = useCallback(
     (e: React.MouseEvent, dryer: Dryer) => {
       e.stopPropagation();
-      const newStatus = dryer.status === "inactive" ? "on" : "inactive";
+      const newStatus = dryer.status === "off" ? "on" : "off";
       const action = newStatus === "on" ? "Bật" : "Tắt";
       setDryers((prev) =>
         prev.map((d) => (d.id === dryer.id ? { ...d, status: newStatus } : d)),
@@ -373,7 +373,9 @@ export function Control() {
     return matchSearch && matchArea && matchStatus;
   });
 
-  const activeCount = allowedDryers.filter((d) => d.status === "active").length;
+  const activeCount = allowedDryers.filter(
+    (d) => d.status === "running",
+  ).length;
 
   return (
     <div className="p-6">
@@ -444,9 +446,9 @@ export function Control() {
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="active">Đang hoạt động</option>
+            <option value="running">Đang hoạt động</option>
             <option value="on">Bật</option>
-            <option value="inactive">Tắt</option>
+            <option value="off">Tắt</option>
           </select>
           {(search || filterArea || filterStatus) && (
             <button
@@ -496,7 +498,7 @@ export function Control() {
                 (e.currentTarget as HTMLElement).style.boxShadow =
                   "0 8px 25px rgba(0,0,0,0.10)";
                 (e.currentTarget as HTMLElement).style.borderColor =
-                  dryer.status === "active"
+                  dryer.status === "running"
                     ? "#86efac"
                     : dryer.status === "on"
                       ? "#93c5fd"
@@ -513,10 +515,10 @@ export function Control() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${dryer.status === "active" ? "bg-green-100" : dryer.status === "on" ? "bg-blue-100" : "bg-slate-100"}`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${dryer.status === "running" ? "bg-green-100" : dryer.status === "on" ? "bg-blue-100" : "bg-slate-100"}`}
                       style={{
                         boxShadow:
-                          dryer.status === "active"
+                          dryer.status === "running"
                             ? "0 0 0 3px rgba(34,197,94,0.15)"
                             : "none",
                       }}
@@ -524,7 +526,7 @@ export function Control() {
                       <Cpu
                         size={20}
                         className={
-                          dryer.status === "active"
+                          dryer.status === "running"
                             ? "text-green-600"
                             : dryer.status === "on"
                               ? "text-blue-600"
@@ -545,7 +547,7 @@ export function Control() {
                   <div className="flex flex-col items-end gap-1">
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                        dryer.status === "active"
+                        dryer.status === "running"
                           ? "bg-green-100 text-green-700"
                           : dryer.status === "on"
                             ? "bg-blue-100 text-blue-700"
@@ -555,14 +557,14 @@ export function Control() {
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          dryer.status === "active"
+                          dryer.status === "running"
                             ? "bg-green-500"
                             : dryer.status === "on"
                               ? "bg-blue-500"
                               : "bg-slate-400"
                         }`}
                       />
-                      {dryer.status === "active"
+                      {dryer.status === "running"
                         ? "Đang hoạt động"
                         : dryer.status === "on"
                           ? "Bật"
@@ -579,7 +581,7 @@ export function Control() {
                     >
                       {modeLabel[dryer.mode]}
                     </span>
-                    {dryer.status === "active" && fruit && (
+                    {dryer.status === "running" && fruit && (
                       <span
                         className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700"
                         style={{ fontWeight: 500 }}
@@ -621,7 +623,7 @@ export function Control() {
                   )}
                 </div>
 
-                {dryer.status === "active" ? (
+                {dryer.status === "running" ? (
                   <div className="mt-3 pt-3 border-t border-slate-100">
                     {(() => {
                       const batch = dryer.activeBatch;
@@ -712,7 +714,7 @@ export function Control() {
                   className="flex items-center gap-1 text-blue-600 text-xs transition-all group-hover:gap-2"
                   style={{ fontWeight: 500 }}
                 >
-                  {dryer.status === "active"
+                  {dryer.status === "running"
                     ? "Điều khiển"
                     : dryer.status === "on"
                       ? "Xem"

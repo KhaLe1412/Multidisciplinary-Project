@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useApp } from "../context/AppContext";
+import { apiFetchSystemLogs, apiFetchEventTypes } from "../api/logsApi";
+import type { SystemLog } from "../data/mockData";
 import {
   Search,
   FileText,
@@ -14,17 +16,8 @@ import {
   BookOpen,
   UserCog,
   ShieldAlert,
+  RefreshCw,
 } from "lucide-react";
-
-const eventTypeLabels: Record<string, string> = {
-  login: "Đăng nhập",
-  logout: "Đăng xuất",
-  device_control: "Điều khiển thiết bị",
-  device_management: "Quản lý thiết bị",
-  policy_management: "Quản lý chính sách",
-  alert: "Cảnh báo",
-  profile_change: "Thông tin cá nhân",
-};
 
 const eventTypeIcons: Record<string, any> = {
   login: LogIn,
@@ -50,10 +43,29 @@ const severityBg: Record<string, string> = {
 };
 
 export function LogsPage() {
-  const { systemLogs, currentUser, dryers } = useApp();
+  const { currentUser, dryers } = useApp();
 
   const isAdmin = currentUser?.role === "admin";
   const canView = isAdmin || currentUser?.permissions?.logs;
+
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadLogs = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const logs = await apiFetchSystemLogs();
+      setSystemLogs(logs);
+    } catch {
+      // keep existing logs on error
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
 
   const [logSearch, setLogSearch] = useState("");
   const [logEventFilter, setLogEventFilter] = useState("");
@@ -62,6 +74,13 @@ export function LogsPage() {
   const [logDryerFilter, setLogDryerFilter] = useState("");
   const [logDateFrom, setLogDateFrom] = useState("");
   const [logDateTo, setLogDateTo] = useState("");
+  const [logTimeFrom, setLogTimeFrom] = useState("");
+  const [logTimeTo, setLogTimeTo] = useState("");
+  const [eventTypes, setEventTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    apiFetchEventTypes().then(setEventTypes);
+  }, []);
 
   if (!canView) {
     return (
@@ -95,9 +114,12 @@ export function LogsPage() {
       !logSeverityFilter || log.severity === logSeverityFilter;
     const matchDryer = !logDryerFilter || log.dryerId === logDryerFilter;
     const matchFrom =
-      !logDateFrom || new Date(log.time) >= new Date(logDateFrom);
+      !logDateFrom ||
+      new Date(log.time) >=
+        new Date(`${logDateFrom}T${logTimeFrom || "00:00:00"}`);
     const matchTo =
-      !logDateTo || new Date(log.time) <= new Date(logDateTo + "T23:59:59");
+      !logDateTo ||
+      new Date(log.time) <= new Date(`${logDateTo}T${logTimeTo || "23:59:59"}`);
     return (
       matchSearch &&
       matchEvent &&
@@ -117,6 +139,8 @@ export function LogsPage() {
     setLogDryerFilter("");
     setLogDateFrom("");
     setLogDateTo("");
+    setLogTimeFrom("");
+    setLogTimeTo("");
   };
 
   const handleExport = () => {
@@ -125,7 +149,7 @@ export function LogsPage() {
     const rows = filteredLogs
       .map(
         (log) =>
-          `"${new Date(log.time).toLocaleString("vi-VN")}","${eventTypeLabels[log.eventType] || log.eventType}","${log.severity}","${log.user}","${log.dryerId || ""}","${log.description}"`,
+          `"${new Date(log.time).toLocaleString("vi-VN")}","${log.eventType}","${log.severity}","${log.user}","${log.dryerId || ""}","${log.description}"`,
       )
       .join("\n");
     const blob = new Blob(["\uFEFF" + header + rows], {
@@ -163,16 +187,27 @@ export function LogsPage() {
             Theo dõi toàn bộ hoạt động và sự kiện trong hệ thống máy sấy
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm transition-all hover:opacity-90 shadow-sm"
-          style={{
-            background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
-            fontWeight: 600,
-          }}
-        >
-          <Download size={15} /> Xuất CSV
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadLogs}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm transition-all hover:bg-slate-200 disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
+            Làm mới
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl text-sm transition-all hover:opacity-90 shadow-sm"
+            style={{
+              background: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
+              fontWeight: 600,
+            }}
+          >
+            <Download size={15} /> Xuất CSV
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -265,9 +300,9 @@ export function LogsPage() {
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-600"
           >
             <option value="">Tất cả loại sự kiện</option>
-            {Object.entries(eventTypeLabels).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
+            {eventTypes.map((et) => (
+              <option key={et} value={et}>
+                {et}
               </option>
             ))}
           </select>
@@ -309,20 +344,36 @@ export function LogsPage() {
               </option>
             ))}
           </select>
-          {/* Date range */}
-          <div className="flex gap-2 items-center">
+          {/* Date + time from */}
+          <div className="flex gap-1 items-center">
+            <span className="text-xs text-slate-400 flex-shrink-0">Từ</span>
             <input
               type="date"
               value={logDateFrom}
               onChange={(e) => setLogDateFrom(e.target.value)}
               className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-slate-400 text-xs flex-shrink-0">→</span>
+            <input
+              type="time"
+              value={logTimeFrom}
+              onChange={(e) => setLogTimeFrom(e.target.value)}
+              className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {/* Date + time to */}
+          <div className="flex gap-1 items-center">
+            <span className="text-xs text-slate-400 flex-shrink-0">Đến</span>
             <input
               type="date"
               value={logDateTo}
               onChange={(e) => setLogDateTo(e.target.value)}
               className="flex-1 px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="time"
+              value={logTimeTo}
+              onChange={(e) => setLogTimeTo(e.target.value)}
+              className="w-24 px-2 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
@@ -385,7 +436,7 @@ export function LogsPage() {
                         style={{ background: bg, color }}
                       >
                         <Icon size={11} />
-                        {eventTypeLabels[log.eventType] || log.eventType}
+                        {log.eventType}
                       </span>
                     </td>
                     <td className="py-2.5 px-4">

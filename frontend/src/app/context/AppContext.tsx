@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import {
   Dryer,
   Area,
@@ -23,11 +29,24 @@ import {
   initialFruits,
   initialBatchRecords,
 } from "../data/mockData";
+import {
+  apiFetchAreas,
+  apiFetchDeviceTypes,
+  apiFetchDryers,
+} from "../api/deviceManagementApi";
+import {
+  apiFetchCrops,
+  apiFetchSchedules,
+  apiFetchRules,
+} from "../api/policyApi";
+import { apiLogin } from "../api/authApi";
+import { setAuthToken, clearAuthToken, getAuthToken } from "../api/apiClient";
+import { apiFetchSystemLogs } from "../api/logsApi";
 
 interface AppContextType {
   isAuthenticated: boolean;
   currentUser: UserAccount | null;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 
   dryers: Dryer[];
@@ -85,43 +104,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     useState<BatchRecord[]>(initialBatchRecords);
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
 
-  const login = (email: string, password: string) => {
-    const found = users.find(
-      (u) => u.email === email && u.password === password && u.active,
-    );
-    if (found) {
-      setCurrentUser(found);
-      setIsAuthenticated(true);
-      setSystemLogs((prev) => [
-        {
-          id: `LOG-${Date.now()}`,
-          eventType: "login",
-          time: new Date().toISOString(),
-          user: found.name,
-          description: "Đăng nhập hệ thống thành công",
-          severity: "info",
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    Promise.all([
+      apiFetchAreas().catch(() => null),
+      apiFetchDeviceTypes().catch(() => null),
+      apiFetchDryers().catch(() => null),
+      apiFetchCrops().catch(() => null),
+      apiFetchSchedules().catch(() => null),
+      apiFetchRules().catch(() => null),
+      apiFetchSystemLogs().catch(() => null),
+    ]).then(([a, dt, d, crops, scheds, rules, logs]) => {
+      if (a) setAreas(a);
+      if (dt) setDeviceTypes(dt);
+      if (d) setDryers(d);
+      if (crops) setFruits(crops);
+      if (scheds) setSchedules(scheds);
+      if (rules) setAlertRules(rules);
+      if (logs) setSystemLogs(logs);
+    });
+  }, [isAuthenticated]);
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const result = await apiLogin(email, password);
+      setAuthToken(result.access_token);
+      const roleMap: Record<string, UserAccount["role"]> = {
+        admin: "admin",
+        staff: "operator",
+        viewer: "viewer",
+      };
+      const user: UserAccount = {
+        id: String(result.user.id),
+        name: result.user.full_name,
+        email: result.user.email,
+        password: "",
+        role: roleMap[result.user.role] ?? "viewer",
+        avatar: "",
+        permissions: {
+          canControl: true,
+          canManage: true,
+          canViewReports: true,
         },
-        ...prev,
-      ]);
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+      setCurrentUser(user);
+      setIsAuthenticated(true);
       return true;
+    } catch {
+      return false;
     }
-    return false;
   };
 
   const logout = () => {
-    if (currentUser) {
-      setSystemLogs((prev) => [
-        {
-          id: `LOG-${Date.now()}`,
-          eventType: "logout",
-          time: new Date().toISOString(),
-          user: currentUser.name,
-          description: "Đăng xuất khỏi hệ thống",
-          severity: "info",
-        },
-        ...prev,
-      ]);
-    }
+    clearAuthToken();
     setCurrentUser(null);
     setIsAuthenticated(false);
   };

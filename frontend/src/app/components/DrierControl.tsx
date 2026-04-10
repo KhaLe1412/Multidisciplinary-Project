@@ -4,8 +4,15 @@ import { useApp } from "../context/AppContext";
 import {
   fetchDryerSensors,
   sendActuatorCommand,
+  fetchDeviceLogs,
+  apiStartManualBatch,
+  apiStartRuleBatch,
+  apiStartScheduleBatch,
+  apiEndBatch,
   type SensorReading,
 } from "../api/controlApi";
+import { apiFetchDryerLogs } from "../api/logsApi";
+import { SystemLog } from "../data/mockData";
 import {
   Device,
   Dryer,
@@ -14,7 +21,6 @@ import {
   DeviceBinding,
   DryerLogEntry,
   PolicyObject,
-  generateSensorData,
   buildActionsDesc,
   formatOffsetSeconds,
 } from "../data/mockData";
@@ -76,17 +82,27 @@ const modeColors: Record<
   schedule: { bg: "#eff6ff", text: "#2563eb", active: "#2563eb" },
 };
 const SENSORS_PER_PAGE = 3;
+const CHART_COLORS = [
+  "#f97316",
+  "#3b82f6",
+  "#22c55e",
+  "#a855f7",
+  "#eab308",
+  "#ef4444",
+];
+const CHART_COLOR_BY_TYPE: Record<string, string> = {
+  "DT-TEMP": "#f97316",
+  "DT-HUM": "#3b82f6",
+};
 
 /* â”€â”€â”€ SparkLine Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SparkLineChart({
   data,
-  dataKey,
   color,
   label,
   height = 140,
 }: {
-  data: { time: string; temp: number; humidity: number }[];
-  dataKey: "temp" | "humidity";
+  data: { time: string; value: number }[];
   color: string;
   label: string;
   height?: number;
@@ -97,14 +113,14 @@ function SparkLineChart({
     PR = 8,
     PT = 8,
     PB = 20;
-  const vals = data.map((d) => d[dataKey]);
+  const vals = data.map((d) => d.value);
   const mn = Math.min(...vals),
     mx = Math.max(...vals);
   const rng = mx - mn || 1;
   const xStep = (W - PL - PR) / Math.max(data.length - 1, 1);
   const pts = data.map((d, i) => ({
     x: PL + i * xStep,
-    y: PT + (1 - (d[dataKey] - mn) / rng) * (H - PT - PB),
+    y: PT + (1 - (d.value - mn) / rng) * (H - PT - PB),
   }));
   const line = pts
     .map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
@@ -268,25 +284,33 @@ function ActuatorValueCard({
   device,
   dtName,
   unit,
+  serverValue,
 }: {
   device: Device;
   dtName: string;
   unit: string;
+  serverValue?: number | null;
 }) {
   const Icon = deviceIcon[device.deviceTypeId] || Cpu;
   const cls = deviceColor[device.deviceTypeId] || "text-slate-500 bg-slate-100";
   const isBoolean = unit === "boolean";
   const isText = unit === "text";
+  const serverOn =
+    serverValue !== null && serverValue !== undefined
+      ? serverValue > 0
+      : device.status;
   let display: string;
-  if (isBoolean) display = device.open ? "Mở" : "Đóng";
+  if (isBoolean) display = serverOn ? "Mở" : "Đóng";
   else if (isText) display = device.message || "—";
   else {
     const v =
-      device.speed !== undefined
-        ? device.speed
-        : device.temperature !== undefined
-          ? device.temperature
-          : (device.value ?? 0);
+      serverValue !== undefined && serverValue !== null
+        ? serverValue
+        : device.speed !== undefined
+          ? device.speed
+          : device.temperature !== undefined
+            ? device.temperature
+            : (device.value ?? 0);
     display = `${v}${unit}`;
   }
   return (
@@ -305,12 +329,12 @@ function ActuatorValueCard({
         </div>
         <span
           className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-            device.status
+            serverOn
               ? "bg-green-100 text-green-700"
               : "bg-slate-100 text-slate-500"
           }`}
         >
-          {device.status ? "Bật" : "Tắt"}
+          {serverOn ? "Bật" : "Tắt"}
         </span>
       </div>
       <div className="text-center py-2 rounded-lg bg-slate-50">
@@ -321,6 +345,15 @@ function ActuatorValueCard({
         </p>
         <p className="text-xs text-slate-400">{dtName}</p>
       </div>
+      {serverValue !== null && serverValue !== undefined && (
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <span className="text-slate-400">Thực tế (server)</span>
+          <span className="font-semibold text-slate-600">
+            {serverValue}
+            {unit !== "boolean" && unit !== "text" ? unit : ""}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -333,6 +366,7 @@ function ManualActuatorCard({
   valueRange,
   disabled,
   onUpdate,
+  serverValue,
 }: {
   device: Device;
   dtName: string;
@@ -340,11 +374,16 @@ function ManualActuatorCard({
   valueRange?: { min: number; max: number };
   disabled: boolean;
   onUpdate: (updates: Partial<Device>, description: string) => void;
+  serverValue?: number | null;
 }) {
   const Icon = deviceIcon[device.deviceTypeId] || Cpu;
   const cls = deviceColor[device.deviceTypeId] || "text-slate-500 bg-slate-100";
   const isBoolean = unit === "boolean";
   const isText = unit === "text";
+  const serverOn =
+    serverValue !== null && serverValue !== undefined
+      ? serverValue > 0
+      : device.status;
 
   const currentVal =
     device.speed !== undefined
@@ -354,11 +393,19 @@ function ManualActuatorCard({
         : (device.value ?? valueRange?.min ?? 0);
   const [localSlider, setLocalSlider] = useState(currentVal);
   const [localInput, setLocalInput] = useState(String(currentVal));
+  const isDragging = useRef(false);
 
   useEffect(() => {
     setLocalSlider(currentVal);
     setLocalInput(String(currentVal));
   }, [currentVal]);
+
+  // Sync slider to live server value when not dragging
+  useEffect(() => {
+    if (isDragging.current || serverValue == null) return;
+    setLocalSlider(serverValue);
+    setLocalInput(String(serverValue));
+  }, [serverValue]);
 
   const commitRange = (val: number) => {
     const clamped = Math.max(
@@ -401,17 +448,17 @@ function ManualActuatorCard({
           disabled={disabled}
           onClick={() =>
             onUpdate(
-              { status: !device.status },
-              `${dtName} ${device.status ? "Tắt" : "Bật"}`,
+              { status: !serverOn },
+              `${dtName} ${serverOn ? "Tắt" : "Bật"}`,
             )
           }
           className={`text-xs px-2 py-0.5 rounded-full font-semibold transition-colors ${
-            device.status
+            serverOn
               ? "bg-green-100 text-green-700 hover:bg-green-200"
               : "bg-slate-100 text-slate-500 hover:bg-slate-200"
           } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
         >
-          {device.status ? "Bật" : "Tắt"}
+          {serverOn ? "Bật" : "Tắt"}
         </button>
       </div>
 
@@ -423,18 +470,18 @@ function ManualActuatorCard({
             disabled={disabled}
             onClick={() =>
               onUpdate(
-                { status: !device.status },
-                `${dtName} ${device.status ? "Tắt" : "Bật"}`,
+                { status: !serverOn },
+                `${dtName} ${serverOn ? "Tắt" : "Bật"}`,
               )
             }
             className={`ml-auto flex items-center gap-2.5 px-6 py-3 rounded-xl text-base font-bold transition-all shadow-md active:scale-95 ${
-              device.status
+              serverOn
                 ? "bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-200"
                 : "bg-slate-200 text-slate-600 hover:bg-slate-300 shadow-slate-200"
             } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
           >
             <Power size={20} />
-            {device.status ? "Đang bật" : "Đang tắt"}
+            {serverOn ? "Đang bật" : "Đang tắt"}
           </button>
         </div>
       )}
@@ -482,8 +529,20 @@ function ManualActuatorCard({
               setLocalSlider(parseInt(e.target.value));
               setLocalInput(e.target.value);
             }}
-            onMouseUp={() => commitRange(localSlider)}
-            onTouchEnd={() => commitRange(localSlider)}
+            onMouseDown={() => {
+              isDragging.current = true;
+            }}
+            onTouchStart={() => {
+              isDragging.current = true;
+            }}
+            onMouseUp={() => {
+              isDragging.current = false;
+              commitRange(localSlider);
+            }}
+            onTouchEnd={() => {
+              isDragging.current = false;
+              commitRange(localSlider);
+            }}
             disabled={disabled}
             className="w-full h-2 rounded-full appearance-none cursor-pointer bg-slate-200 accent-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
             style={
@@ -520,6 +579,15 @@ function ManualActuatorCard({
           </div>
         </div>
       )}
+      {serverValue !== null && serverValue !== undefined && (
+        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-xs text-slate-400">Thực tế (server)</span>
+          <span className="text-xs font-semibold text-slate-600">
+            {serverValue}
+            {unit !== "boolean" && unit !== "text" ? unit : ""}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -528,17 +596,27 @@ function ManualActuatorCard({
 function CountdownTimer({
   startedAt,
   runSeconds,
+  onComplete,
 }: {
   startedAt: string;
   runSeconds: number;
+  onComplete?: () => void;
 }) {
   const [now, setNow] = useState(Date.now());
+  const completedRef = useRef(false);
   useEffect(() => {
+    completedRef.current = false;
     const iv = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(iv);
-  }, []);
+  }, [startedAt, runSeconds]);
   const elapsed = Math.floor((now - new Date(startedAt).getTime()) / 1000);
   const remaining = Math.max(runSeconds - elapsed, 0);
+  useEffect(() => {
+    if (remaining === 0 && runSeconds > 0 && !completedRef.current) {
+      completedRef.current = true;
+      onComplete?.();
+    }
+  }, [remaining, runSeconds, onComplete]);
   const pct = runSeconds > 0 ? Math.min(elapsed / runSeconds, 1) * 100 : 0;
   const fmt = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -580,7 +658,7 @@ function LogTable({
   logs,
   compact,
 }: {
-  logs: DryerLogEntry[];
+  logs: { time: string; user: string; description: string }[];
   compact?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -738,10 +816,9 @@ export function DrierControl() {
 
   const dryer = dryers.find((d) => d.id === id);
   const area = dryer ? areas.find((a) => a.id === dryer.areaId) : null;
-  const [sensorData] = useState(() => generateSensorData(12));
 
-  const isActive = dryer?.status === "active";
-  const isInactive = dryer?.status === "inactive";
+  const isActive = dryer?.status === "running";
+  const isInactive = dryer?.status === "off";
 
   /* ── API: sensor polling ── */
   const POLL_INTERVAL_MS = 5000;
@@ -791,6 +868,118 @@ export function DrierControl() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dryer?.id, isInactive]);
 
+  /* ── API: actuator polling (đọc trạng thái thực tế từ server) ── */
+  const [actuatorReadings, setActuatorReadings] = useState<
+    Map<string, SensorReading>
+  >(new Map());
+  const actuatorAbortRef = useRef<AbortController | null>(null);
+  const [deviceLogs, setDeviceLogs] = useState<
+    Map<string, { value: number; time: string }[]>
+  >(new Map());
+
+  useEffect(() => {
+    if (!dryer) {
+      setActuatorReadings(new Map());
+      return;
+    }
+
+    const poll = async () => {
+      actuatorAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      actuatorAbortRef.current = ctrl;
+      try {
+        const actuatorDevices = dryer.devices.filter(
+          (d) =>
+            deviceTypes.find((t) => t.id === d.deviceTypeId)?.category ===
+            "controller",
+        );
+        const results: SensorReading[][] = await Promise.all(
+          actuatorDevices.map((dev) =>
+            fetchDryerSensors(dev.id, ctrl.signal).catch(
+              (): SensorReading[] => [],
+            ),
+          ),
+        );
+        const allReadings = results.flat();
+        setActuatorReadings(new Map(allReadings.map((r) => [r.device_id, r])));
+      } catch {
+        /* ignore AbortError */
+      }
+    };
+
+    poll();
+    const iv = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(iv);
+      actuatorAbortRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dryer?.id]);
+
+  /* ── API: dryer system log polling ── */
+  const [dryerSystemLogs, setDryerSystemLogs] = useState<SystemLog[]>([]);
+  const LOG_POLL_MS = 5_000;
+
+  useEffect(() => {
+    if (!dryer?.id) return;
+    const numericId = parseInt(dryer.id, 10);
+    if (isNaN(numericId)) return;
+
+    const fetchLogs = async () => {
+      try {
+        const logs = await apiFetchDryerLogs(numericId);
+        setDryerSystemLogs(logs);
+      } catch {
+        // giữ logs cũ nếu fetch thất bại
+      }
+    };
+
+    fetchLogs();
+    const iv = setInterval(fetchLogs, LOG_POLL_MS);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dryer?.id]);
+
+  /* ── API: log polling for charts (all sensor devices) ── */
+  useEffect(() => {
+    const chartDevices =
+      dryer?.devices.filter(
+        (d) =>
+          deviceTypes.find((t) => t.id === d.deviceTypeId)?.category ===
+          "sensor",
+      ) ?? [];
+    if (chartDevices.length === 0) return;
+
+    const fetchLogs = async () => {
+      const results = await Promise.all(
+        chartDevices.map(async (dev) => {
+          try {
+            const logs = await fetchDeviceLogs(dev.id);
+            const entries = [...logs].reverse().map((l) => ({
+              value: l.value ?? 0,
+              time: new Date(l.timestamp).toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            }));
+            return { id: dev.id, entries };
+          } catch {
+            return {
+              id: dev.id,
+              entries: [] as { value: number; time: string }[],
+            };
+          }
+        }),
+      );
+      setDeviceLogs(new Map(results.map((r) => [r.id, r.entries])));
+    };
+
+    fetchLogs();
+    const iv = setInterval(fetchLogs, 10_000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dryer?.id]);
+
   /* ── API: send actuator command (manual mode) ── */
   const sendActuator = useCallback(
     async (
@@ -810,13 +999,13 @@ export function DrierControl() {
   /* â”€â”€ manual mode state â”€â”€ */
   const [manualFruitId, setManualFruitId] = useState("");
   const [manualWeight, setManualWeight] = useState("");
-  const [manualRunMin, setManualRunMin] = useState("");
+  const [manualRunSec, setManualRunSec] = useState("");
 
   /* â”€â”€ threshold mode state â”€â”€ */
   const [selAlertRuleId, setSelAlertRuleId] = useState("");
   const [threshFruitId, setThreshFruitId] = useState("");
   const [threshWeight, setThreshWeight] = useState("");
-  const [threshRunMin, setThreshRunMin] = useState("");
+  const [threshRunSec, setThreshRunSec] = useState("");
   const [threshBindings, setThreshBindings] = useState<DeviceBinding[]>([]);
 
   /* â”€â”€ schedule mode state â”€â”€ */
@@ -824,7 +1013,9 @@ export function DrierControl() {
   const [schedFruitId, setSchedFruitId] = useState("");
   const [schedWeight, setSchedWeight] = useState("");
   const [schedStart, setSchedStart] = useState("");
+  const [schedRunSec, setSchedRunSec] = useState("");
   const [schedBindings, setSchedBindings] = useState<DeviceBinding[]>([]);
+  const [serverBatchId, setServerBatchId] = useState<number | null>(null);
 
   /* â”€â”€ rating modal â”€â”€ */
   const [showRating, setShowRating] = useState(false);
@@ -833,6 +1024,9 @@ export function DrierControl() {
   const [sensorPage, setSensorPage] = useState(0);
   const [chartsCollapsed, setChartsCollapsed] = useState(false);
   const [chartIdx, setChartIdx] = useState(0);
+  const [selectedSensorIds, setSelectedSensorIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   /* auto-set fruit */
   useEffect(() => {
@@ -844,6 +1038,22 @@ export function DrierControl() {
     const sch = schedules.find((s) => s.id === selScheduleId);
     if (sch) setSchedFruitId(sch.fruitId);
   }, [selScheduleId, schedules]);
+
+  /* reset chart sensor selection when dryer changes */
+  useEffect(() => {
+    const sensorIds = new Set(
+      (dryer?.devices ?? [])
+        .filter(
+          (d) =>
+            deviceTypes.find((t) => t.id === d.deviceTypeId)?.category ===
+            "sensor",
+        )
+        .map((d) => d.id),
+    );
+    setSelectedSensorIds(sensorIds);
+    setChartIdx(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dryer?.id]);
 
   /* â”€â”€ helpers â”€â”€ */
   const updateDryer = useCallback(
@@ -902,7 +1112,7 @@ export function DrierControl() {
         dryerLogs: [
           {
             time: new Date().toISOString(),
-            user: currentUser?.name || "Há»‡ thá»‘ng",
+            user: currentUser?.name || "",
             description,
           },
           ...(d.dryerLogs || []),
@@ -927,15 +1137,15 @@ export function DrierControl() {
     if (!dryer || isActive) return;
 
     if (dryer.mode === "manual") {
-      if (!manualFruitId || !manualWeight || !manualRunMin) return;
+      if (!manualFruitId || !manualWeight || !manualRunSec) return;
       const fruitName = fruits.find((f) => f.id === manualFruitId)?.name || "";
       updateDryer((d) => ({
         ...d,
-        status: "active",
+        status: "running",
         activeBatch: {
           fruitId: manualFruitId,
           inputWeight: parseFloat(manualWeight),
-          runSeconds: parseFloat(manualRunMin) * 60,
+          runSeconds: parseFloat(manualRunSec),
           startedAt: new Date().toISOString(),
           mode: "manual",
         },
@@ -948,17 +1158,25 @@ export function DrierControl() {
           ...(d.dryerLogs || []),
         ],
       }));
+      apiStartManualBatch(
+        dryer.id,
+        manualFruitId || null,
+        parseFloat(manualWeight),
+        parseFloat(manualRunSec),
+      )
+        .then((r) => setServerBatchId(r.id))
+        .catch((err: unknown) => console.error("[batch/manual]", err));
     } else if (dryer.mode === "threshold") {
-      if (!selAlertRuleId || !threshWeight || !threshRunMin) return;
+      if (!selAlertRuleId || !threshWeight || !threshRunSec) return;
       const rule = alertRules.find((r) => r.id === selAlertRuleId);
       const fruitName = fruits.find((f) => f.id === threshFruitId)?.name || "";
       updateDryer((d) => ({
         ...d,
-        status: "active",
+        status: "running",
         activeBatch: {
           fruitId: threshFruitId,
           inputWeight: parseFloat(threshWeight),
-          runSeconds: parseFloat(threshRunMin) * 60,
+          runSeconds: parseFloat(threshRunSec),
           startedAt: new Date().toISOString(),
           mode: "threshold",
           alertRuleId: selAlertRuleId,
@@ -973,17 +1191,30 @@ export function DrierControl() {
           ...(d.dryerLogs || []),
         ],
       }));
+      apiStartRuleBatch(
+        dryer.id,
+        threshFruitId || null,
+        parseFloat(threshWeight),
+        parseFloat(threshRunSec),
+        parseInt(selAlertRuleId, 10),
+        threshBindings.map((b) => ({
+          rule_virtual_device_id: parseInt(b.objectId, 10),
+          device_id: b.deviceId,
+        })),
+      )
+        .then((r) => setServerBatchId(r.id))
+        .catch((err: unknown) => console.error("[batch/rule]", err));
     } else if (dryer.mode === "schedule") {
-      if (!selScheduleId || !schedWeight || !schedStart) return;
+      if (!selScheduleId || !schedWeight || !schedRunSec) return;
       const sch = schedules.find((s) => s.id === selScheduleId);
       const fruitName = fruits.find((f) => f.id === schedFruitId)?.name || "";
       updateDryer((d) => ({
         ...d,
-        status: "active",
+        status: "running",
         activeBatch: {
           fruitId: schedFruitId,
           inputWeight: parseFloat(schedWeight),
-          runSeconds: 0,
+          runSeconds: parseFloat(schedRunSec),
           startedAt: new Date().toISOString(),
           mode: "schedule",
           scheduleId: selScheduleId,
@@ -999,6 +1230,19 @@ export function DrierControl() {
           ...(d.dryerLogs || []),
         ],
       }));
+      apiStartScheduleBatch(
+        dryer.id,
+        schedFruitId || null,
+        parseFloat(schedWeight),
+        parseFloat(schedRunSec),
+        parseInt(selScheduleId, 10),
+        schedBindings.map((b) => ({
+          schedule_virtual_device_id: parseInt(b.objectId, 10),
+          device_id: b.deviceId,
+        })),
+      )
+        .then((r) => setServerBatchId(r.id))
+        .catch((err: unknown) => console.error("[batch/schedule]", err));
     }
 
     addLog({
@@ -1015,8 +1259,14 @@ export function DrierControl() {
     if (dryer && isActive) setShowRating(true);
   };
 
-  const completeBatch = (rating: number, outputWeight: number) => {
+  const completeBatch = async (rating: number, outputWeight: number) => {
     if (!dryer || !dryer.activeBatch) return;
+    if (serverBatchId !== null) {
+      await apiEndBatch(serverBatchId, outputWeight, rating).catch(
+        (err: unknown) => console.error("[endBatch]", err),
+      );
+      setServerBatchId(null);
+    }
     const batch = dryer.activeBatch;
     const fruit = fruits.find((f) => f.id === batch.fruitId);
     const sch = batch.scheduleId
@@ -1093,7 +1343,8 @@ export function DrierControl() {
   );
   const actuators = dryer.devices.filter(
     (d) =>
-      deviceTypes.find((t) => t.id === d.deviceTypeId)?.category === "actuator",
+      deviceTypes.find((t) => t.id === d.deviceTypeId)?.category ===
+      "controller",
   );
   const batchFruit = dryer.activeBatch
     ? fruits.find((f) => f.id === dryer.activeBatch!.fruitId)
@@ -1105,10 +1356,16 @@ export function DrierControl() {
     sensorPage * SENSORS_PER_PAGE,
     (sensorPage + 1) * SENSORS_PER_PAGE,
   );
-  const chartOpts = [
-    { key: "temp" as const, color: "#f97316", label: "Nhiá»‡t Ä‘á»™ (Â°C)" },
-    { key: "humidity" as const, color: "#3b82f6", label: "Äá»™ áº©m (%)" },
-  ];
+  const chartOpts = sensors.map((dev, i) => ({
+    deviceId: dev.id,
+    color:
+      CHART_COLOR_BY_TYPE[dev.deviceTypeId] ??
+      CHART_COLORS[i % CHART_COLORS.length],
+    label: dev.name,
+  }));
+  const safeChartIdx = Math.min(chartIdx, Math.max(0, chartOpts.length - 1));
+  const chartData =
+    deviceLogs.get(chartOpts[safeChartIdx]?.deviceId ?? "") ?? [];
 
   /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   return (
@@ -1128,14 +1385,14 @@ export function DrierControl() {
               <span className="text-xs text-slate-400">{dryer.id}</span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${
-                  dryer.status === "active"
+                  dryer.status === "running"
                     ? "bg-green-100 text-green-700 border-green-200"
                     : dryer.status === "on"
                       ? "bg-blue-100 text-blue-700 border-blue-200"
                       : "bg-slate-100 text-slate-500 border-slate-200"
                 }`}
               >
-                {dryer.status === "active"
+                {dryer.status === "running"
                   ? "Đang hoạt động"
                   : dryer.status === "on"
                     ? "Bật"
@@ -1212,8 +1469,8 @@ export function DrierControl() {
             setFruitId={setManualFruitId}
             weight={manualWeight}
             setWeight={setManualWeight}
-            runMin={manualRunMin}
-            setRunMin={setManualRunMin}
+            runMin={manualRunSec}
+            setRunMin={setManualRunSec}
             onStart={startBatch}
             disabled={false}
           />
@@ -1290,12 +1547,12 @@ export function DrierControl() {
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1 font-semibold">
-                  Thời gian (phút) <span className="text-red-500">*</span>
+                  Thời gian (giây) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
-                  value={threshRunMin}
-                  onChange={(e) => setThreshRunMin(e.target.value)}
+                  value={threshRunSec}
+                  onChange={(e) => setThreshRunSec(e.target.value)}
                   min={1}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="0"
@@ -1304,9 +1561,9 @@ export function DrierControl() {
             </div>
             <button
               onClick={startBatch}
-              disabled={!selAlertRuleId || !threshWeight || !threshRunMin}
+              disabled={!selAlertRuleId || !threshWeight || !threshRunSec}
               className={`w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 ${
-                selAlertRuleId && threshWeight && threshRunMin
+                selAlertRuleId && threshWeight && threshRunSec
                   ? "bg-purple-600 text-white hover:bg-purple-700"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
@@ -1423,21 +1680,23 @@ export function DrierControl() {
               </div>
               <div>
                 <label className="text-xs text-slate-500 block mb-1 font-semibold">
-                  Thời gian bắt đầu <span className="text-red-500">*</span>
+                  Thời gian chạy (giây) <span className="text-red-500">*</span>
                 </label>
                 <input
-                  type="datetime-local"
-                  value={schedStart}
-                  onChange={(e) => setSchedStart(e.target.value)}
+                  type="number"
+                  value={schedRunSec}
+                  onChange={(e) => setSchedRunSec(e.target.value)}
+                  min={0}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="3600"
                 />
               </div>
             </div>
             <button
               onClick={startBatch}
-              disabled={!selScheduleId || !schedWeight || !schedStart}
+              disabled={!selScheduleId || !schedWeight || !schedRunSec}
               className={`w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 ${
-                selScheduleId && schedWeight && schedStart
+                selScheduleId && schedWeight && schedRunSec
                   ? "bg-blue-600 text-white hover:bg-blue-700"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
@@ -1454,6 +1713,7 @@ export function DrierControl() {
               <CountdownTimer
                 startedAt={dryer.activeBatch.startedAt}
                 runSeconds={dryer.activeBatch.runSeconds}
+                onComplete={stopBatch}
               />
             )}
 
@@ -1652,6 +1912,9 @@ export function DrierControl() {
                         unit={dt?.unit || ""}
                         valueRange={dt?.valueRange}
                         disabled={false}
+                        serverValue={
+                          actuatorReadings.get(dev.id)?.value ?? null
+                        }
                         onUpdate={(updates, desc) =>
                           updateDeviceManual(dev.id, updates, desc || undefined)
                         }
@@ -1668,6 +1931,9 @@ export function DrierControl() {
                         device={dev}
                         dtName={dt?.name || ""}
                         unit={dt?.unit || ""}
+                        serverValue={
+                          actuatorReadings.get(dev.id)?.value ?? null
+                        }
                       />
                     );
                   })}
@@ -1799,7 +2065,7 @@ export function DrierControl() {
                         <ChevronLeft size={16} className="text-slate-500" />
                       </button>
                       <span className="text-xs text-slate-400">
-                        {chartOpts[chartIdx].label}
+                        {chartOpts[safeChartIdx]?.label}
                       </span>
                       <button
                         onClick={() =>
@@ -1832,17 +2098,16 @@ export function DrierControl() {
                 <div className="flex gap-4 flex-col md:flex-row">
                   <div className="flex-1">
                     <SparkLineChart
-                      data={sensorData}
-                      dataKey={chartOpts[chartIdx].key}
-                      color={chartOpts[chartIdx].color}
-                      label={chartOpts[chartIdx].label}
+                      data={chartData}
+                      color={chartOpts[safeChartIdx]?.color ?? "#64748b"}
+                      label={chartOpts[safeChartIdx]?.label ?? ""}
                     />
                   </div>
                   <div className="flex-1 bg-white rounded-xl border border-slate-100 p-4">
                     <h3 className="text-sm text-slate-700 mb-2 font-bold">
                       Nhật ký hoạt động
                     </h3>
-                    <LogTable logs={dryer.dryerLogs || []} compact />
+                    <LogTable logs={dryerSystemLogs} compact />
                   </div>
                 </div>
               ) : (
@@ -1850,9 +2115,8 @@ export function DrierControl() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {chartOpts.map((opt) => (
                     <SparkLineChart
-                      key={opt.key}
-                      data={sensorData}
-                      dataKey={opt.key}
+                      key={opt.deviceId}
+                      data={deviceLogs.get(opt.deviceId) ?? []}
                       color={opt.color}
                       label={opt.label}
                     />
@@ -1867,7 +2131,7 @@ export function DrierControl() {
                 <h2 className="text-sm text-slate-700 mb-3 font-bold">
                   Nhật ký hoạt động
                 </h2>
-                <LogTable logs={dryer.dryerLogs || []} />
+                <LogTable logs={dryerSystemLogs} />
               </div>
             )}
           </div>
@@ -1958,7 +2222,7 @@ function BatchConfigManual({
         </div>
         <div>
           <label className="text-xs text-slate-500 block mb-1 font-semibold">
-            Thời gian (phút) <span className="text-red-500">*</span>
+            Thời gian (giây) <span className="text-red-500">*</span>
           </label>
           <input
             type="number"

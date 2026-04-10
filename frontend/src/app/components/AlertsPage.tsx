@@ -566,9 +566,7 @@ export function AlertsPage() {
                             }}
                           >
                             {sensorLabels[alert.sensorType]}{" "}
-                            {isAbove
-                              ? "vượt ngưỡng trên"
-                              : "dưới ngưỡng dưới"}
+                            {isAbove ? "vượt ngưỡng trên" : "dưới ngưỡng dưới"}
                           </span>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${alert.resolved ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
@@ -640,9 +638,7 @@ export function AlertsPage() {
                 className="text-lg text-slate-900"
                 style={{ fontWeight: 700 }}
               >
-                {editingRule.id
-                  ? "Sửa quy tắc"
-                  : "Thêm quy tắc cảnh báo"}
+                {editingRule.id ? "Sửa quy tắc" : "Thêm quy tắc cảnh báo"}
               </h2>
               <button
                 onClick={() => setEditingRule(null)}
@@ -727,8 +723,7 @@ export function AlertsPage() {
                     className="text-xs text-slate-500"
                     style={{ fontWeight: 600 }}
                   >
-                    Đối tượng thiết bị (
-                    {(editingRule.objects ?? []).length})
+                    Đối tượng thiết bị ({(editingRule.objects ?? []).length})
                   </label>
                   <button
                     onClick={() => {
@@ -1033,7 +1028,7 @@ function InlineActionEditor({
 }) {
   const actuatorObjs = objects.filter((o) => {
     const dt = allDeviceTypes.find((t) => t.id === o.deviceTypeId);
-    return dt?.category === "actuator";
+    return dt?.category === "controller";
   });
 
   const add = () => {
