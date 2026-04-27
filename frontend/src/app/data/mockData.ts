@@ -24,6 +24,58 @@ export type DeviceType =
 export type DryerMode = "manual" | "threshold" | "schedule";
 export type DryerStatus = "off" | "on" | "running";
 
+// ======== LOCAL SCHEDULE / RULE (per-dryer instances) ========
+export interface LocalSchedule {
+  id: number;
+  dryer_id: number;
+  schedule_id: number;
+  name: string;
+  created_at: string;
+  schedule_name?: string;
+  mappings?: {
+    schedule_virtual_device_id: number;
+    device_id: string;
+    svd_name?: string;
+    device_name?: string;
+  }[];
+}
+
+export interface LocalRule {
+  id: number;
+  dryer_id: number;
+  rule_id: number;
+  name: string;
+  created_at: string;
+  rule_name?: string;
+  mappings?: {
+    rule_virtual_device_id: number;
+    device_id: string;
+    rvd_name?: string;
+    device_name?: string;
+  }[];
+}
+
+export interface BatchScheduleQueueEntry {
+  id: number;
+  batch_id: number;
+  local_schedule_id: number;
+  queue_order: number;
+  status: "pending" | "running" | "completed" | "cancelled";
+  started_at: string | null;
+  completed_at: string | null;
+  local_schedule_name: string;
+  schedule_name: string;
+}
+
+export interface BatchRuleSetEntry {
+  id: number;
+  batch_id: number;
+  local_rule_id: number;
+  priority_order: number;
+  local_rule_name: string;
+  rule_name: string;
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -144,15 +196,21 @@ export interface DeviceBinding {
 }
 
 export interface ActiveBatch {
+  id?: number;
   fruitId: string;
   inputWeight: number;
-  runSeconds: number; // total duration
+  runSeconds: number; // total duration (0 = no limit)
   startedAt: string; // ISO
-  mode: DryerMode;
+  mode?: DryerMode; // legacy – ignored in unified model
   alertRuleId?: string;
   scheduleId?: string;
-  scheduleStartTime?: string; // for schedule mode offset calc
+  scheduleStartTime?: string;
   deviceBindings?: DeviceBinding[];
+  // unified model fields
+  scheduleEnabled?: boolean;
+  ruleEnabled?: boolean;
+  scheduleQueue?: BatchScheduleQueueEntry[];
+  ruleSet?: BatchRuleSetEntry[];
 }
 
 export interface DryerLogEntry {

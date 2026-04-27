@@ -2,7 +2,7 @@
  * deviceManagementApi.ts
  * CRUD cho areas, device_types, dryers, devices — giao tiếp với test_main.py.
  */
-import {
+import type {
   Area,
   DeviceTypeModel,
   Dryer,
@@ -19,7 +19,10 @@ const BASE =
 function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, {
     ...init,
-    headers: { ...getAuthHeaders(), ...((init?.headers as Record<string, string>) ?? {}) },
+    headers: {
+      ...getAuthHeaders(),
+      ...((init?.headers as Record<string, string>) ?? {}),
+    },
   });
 }
 
@@ -295,11 +298,14 @@ export async function apiUpdateDevice(
     install_date?: string | null;
   },
 ): Promise<Device> {
-  const res = await apiFetch(`${BASE}/api/dryers/${dryerId}/devices/${deviceId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await apiFetch(
+    `${BASE}/api/dryers/${dryerId}/devices/${deviceId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   await throwIfError(res);
   return toDevice(await res.json());
 }
@@ -308,9 +314,12 @@ export async function apiDeleteDevice(
   dryerId: string,
   deviceId: string,
 ): Promise<void> {
-  const res = await apiFetch(`${BASE}/api/dryers/${dryerId}/devices/${deviceId}`, {
-    method: "DELETE",
-  });
+  const res = await apiFetch(
+    `${BASE}/api/dryers/${dryerId}/devices/${deviceId}`,
+    {
+      method: "DELETE",
+    },
+  );
   await throwIfError(res);
 }
 
@@ -330,4 +339,3 @@ export async function apiFetchUsers(): Promise<SystemUser[]> {
   await throwIfError(res);
   return (await res.json()) as SystemUser[];
 }
-

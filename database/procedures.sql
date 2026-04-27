@@ -8,18 +8,17 @@ DELIMITER $$
 CREATE PROCEDURE create_batch (
     IN p_dryer_id INT,
     IN p_crop_id INT,
-    IN p_schedule_id INT,
-    IN p_rule_id INT,
-    IN p_input_weight FLOAT
+    IN p_input_weight FLOAT,
+    IN p_runtime INT
 )
 BEGIN
     INSERT INTO batches (
-        dryer_id, crop_id, schedule_id, rule_id,
-        input_weight, start_time
+        dryer_id, crop_id,
+        input_weight, runtime, start_time
     )
     VALUES (
-        p_dryer_id, p_crop_id, p_schedule_id, p_rule_id,
-        p_input_weight, NOW()
+        p_dryer_id, p_crop_id,
+        p_input_weight, p_runtime, NOW()
     );
 END $$
 

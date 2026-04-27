@@ -1,4 +1,7 @@
 
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())  # Tìm .env từ thư mục hiện tại lên trên, load trước khi import các module đọc os.environ
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.auth import get_current_user

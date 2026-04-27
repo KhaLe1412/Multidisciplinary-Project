@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from src.auth import get_current_user
 from src.db import get_db
 
@@ -57,27 +57,52 @@ def list_logs(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/dryer/{dryer_id}")
-def list_dryer_logs(dryer_id: int, current_user: dict = Depends(get_current_user)):
-    """Lấy system_logs của một máy sấy cụ thể, mới nhất trước."""
+def list_dryer_logs(
+    dryer_id: int,
+    since: int = Query(0, ge=0),
+    current_user: dict = Depends(get_current_user),
+):
+    """Lấy system_logs của một máy sấy cụ thể.
+
+    - since=0 (mặc định): trả về 20 log mới nhất, DESC.
+    - since=<id>: trả về các log có id > since theo thứ tự ASC (để frontend prepend).
+    """
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        cur.execute(
-            """
-            SELECT sl.id, sl.timestamp, sl.user_id, sl.dryer_id, sl.description,
-                   et.name  AS event_type,
-                   sv.level AS severity,
-                   u.full_name AS user
-            FROM system_logs sl
-            JOIN event_types    et ON et.id = sl.event_type_id
-            JOIN severity_levels sv ON sv.id = sl.severity_id
-            LEFT JOIN users     u  ON u.id  = sl.user_id
-            WHERE sl.dryer_id = %s
-            ORDER BY sl.id DESC
-            LIMIT 20
-            """,
-            (dryer_id,),
-        )
+        if since > 0:
+            cur.execute(
+                """
+                SELECT sl.id, sl.timestamp, sl.user_id, sl.dryer_id, sl.description,
+                       et.name  AS event_type,
+                       sv.level AS severity,
+                       u.full_name AS user
+                FROM system_logs sl
+                JOIN event_types    et ON et.id = sl.event_type_id
+                JOIN severity_levels sv ON sv.id = sl.severity_id
+                LEFT JOIN users     u  ON u.id  = sl.user_id
+                WHERE sl.dryer_id = %s AND sl.id > %s
+                ORDER BY sl.id ASC
+                """,
+                (dryer_id, since),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT sl.id, sl.timestamp, sl.user_id, sl.dryer_id, sl.description,
+                       et.name  AS event_type,
+                       sv.level AS severity,
+                       u.full_name AS user
+                FROM system_logs sl
+                JOIN event_types    et ON et.id = sl.event_type_id
+                JOIN severity_levels sv ON sv.id = sl.severity_id
+                LEFT JOIN users     u  ON u.id  = sl.user_id
+                WHERE sl.dryer_id = %s
+                ORDER BY sl.id DESC
+                LIMIT 20
+                """,
+                (dryer_id,),
+            )
         rows = cur.fetchall()
         return [_build_log_row(r) for r in rows]
     finally:

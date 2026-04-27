@@ -30,7 +30,7 @@ def create_device_type(body: DeviceTypeCreate, current_user: dict = Depends(get_
         new_id = cursor.lastrowid
     finally:
         conn.close()
-    write_system_log("device_type_change", "info", f"Tạo loại thiết bị: {body.name}",
+    write_system_log("DEVICE_TYPE_CHANGE", "info", f"Tạo loại thiết bị: {body.name}",
                      user_id=current_user["id"])
     return {"id": new_id, **body.model_dump()}
 
@@ -55,7 +55,7 @@ def update_device_type(type_id: int, body: DeviceTypeUpdate, current_user: dict 
         result = cursor.fetchone()
     finally:
         conn.close()
-    write_system_log("device_type_change", "info", f"Cập nhật loại thiết bị id={type_id}",
+    write_system_log("DEVICE_TYPE_CHANGE", "info", f"Cập nhật loại thiết bị id={type_id}",
                      user_id=current_user["id"])
     return result
 
@@ -67,12 +67,12 @@ def delete_device_type(type_id: int, current_user: dict = Depends(get_current_us
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM devices WHERE type_id = %s", (type_id,))
         if cursor.fetchone()[0] > 0:
-            raise HTTPException(status_code=409, detail="Loai thiet bi dang duoc su dung, khong the xoa")
+            raise HTTPException(status_code=409, detail="Loại thiết bị đang được sử dụng, không thể xóa")
         cursor.execute("DELETE FROM device_types WHERE id = %s", (type_id,))
         if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Device type not found")
+            raise HTTPException(status_code=404, detail="Loại thiết bị không tồn tại")
         conn.commit()
     finally:
         conn.close()
-    write_system_log("device_type_change", "info", f"Xóa loại thiết bị id={type_id}",
+    write_system_log("DEVICE_TYPE_CHANGE", "info", f"Xóa loại thiết bị id={type_id}",
                      user_id=current_user["id"])

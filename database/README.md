@@ -16,17 +16,22 @@ Database **DADN** phục vụ hệ thống quản lý máy sấy nông sản. G�
 
 ```
 users ──┬── areas ── dryers ──┬── devices (sensor/controller)
-        │                     └── batches
+        │                     ├── batches ──┬── batch_schedule_queue ── local_schedules
+        │                     │             └── batch_rule_set ── local_rules
+        │                     ├── local_schedules ── local_schedule_device_mapping
+        │                     └── local_rules ── local_rule_device_mapping
         └── dryers
 
 crops ──┬── schedules ── stages ── schedule_actions
         ├── rules ── value_pairs ──┬── conditions
-        │                         └── rule_actions
+        │                          └── rule_actions
         └── batches
 
 virtual_devices ── schedule_virtual_devices
                └── rule_virtual_devices
-               └── batch_device_mapping
+
+batch_schedule_device_mapping ── batches × schedules × schedule_virtual_devices × devices
+batch_rule_device_mapping ── batches × rules × rule_virtual_devices × devices
 
 sensor_logs ── devices
 system_logs ── event_types / severity_levels
@@ -224,30 +229,131 @@ Mỗi `value_pair` thuộc một rule, gồm một tập `conditions` (AND logic
 
 ### `batches` — Mẻ sấy
 
-| Cột             | Kiểu             | Mô tả                    |
-| --------------- | ---------------- | ------------------------ |
-| `id`            | INT PK AUTO      | ID mẻ                    |
-| `input_weight`  | FLOAT            | Trọng lượng đầu vào (kg) |
-| `output_weight` | FLOAT            | Trọng lượng đầu ra (kg)  |
-| `start_time`    | DATETIME         | Thời điểm bắt đầu        |
-| `end_time`      | DATETIME         | Thời điểm kết thúc       |
-| `rating`        | INT              | Đánh giá chất lượng      |
-| `dryer_id`      | INT FK→dryers    | Máy sấy                  |
-| `crop_id`       | INT FK→crops     | Loại nông sản            |
-| `schedule_id`   | INT FK→schedules | Lịch trình áp dụng       |
-| `rule_id`       | INT FK→rules     | Quy tắc áp dụng          |
+| Cột                | Kiểu          | Mô tả                        |
+| ------------------ | ------------- | ---------------------------- |
+| `id`               | INT PK AUTO   | ID mẻ                        |
+| `input_weight`     | FLOAT         | Trọng lượng đầu vào (kg)     |
+| `output_weight`    | FLOAT         | Trọng lượng đầu ra (kg)      |
+| `start_time`       | DATETIME      | Thời điểm bắt đầu            |
+| `end_time`         | DATETIME      | Thời điểm kết thúc           |
+| `rating`           | INT           | Đánh giá chất lượng          |
+| `runtime`          | INT NULL      | Thời gian chạy tối đa (giây) |
+| `schedule_enabled` | BOOLEAN       | Đã bật schedule queue?       |
+| `rule_enabled`     | BOOLEAN       | Đã bật rule engine?          |
+| `dryer_id`         | INT FK→dryers | Máy sấy                      |
+| `crop_id`          | INT FK→crops  | Loại nông sản                |
+
+> Mô hình mới: không còn `schedule_id` / `rule_id` trực tiếp. Schedule và rule được quản lý qua `batch_schedule_queue` và `batch_rule_set`.
 
 ---
 
-### `batch_device_mapping` — Ánh xạ thiết bị ảo → thiết bị thật cho mẻ
+### `local_schedules` — Lịch trình cục bộ (per-dryer)
 
-Quan hệ 3 ngôi, khoá chính tổng hợp.
+Instance per-dryer của global schedule, kèm mapping thiết bị ảo → thiết bị thực.
 
-| Cột                 | Kiểu                    | Mô tả           |
-| ------------------- | ----------------------- | --------------- |
-| `batch_id`          | INT FK→batches          | Mẻ sấy          |
-| `virtual_device_id` | INT FK→virtual_devices  | Thiết bị ảo     |
-| `device_id`         | VARCHAR(255) FK→devices | Thiết bị vật lý |
+| Cột           | Kiểu             | Mô tả                 |
+| ------------- | ---------------- | --------------------- |
+| `id`          | INT PK AUTO      | ID                    |
+| `dryer_id`    | INT FK→dryers    | Máy sấy               |
+| `schedule_id` | INT FK→schedules | Schedule gốc (mẫu)    |
+| `name`        | VARCHAR(255)     | Tên do người dùng đặt |
+| `created_at`  | DATETIME         | Thời điểm tạo         |
+
+---
+
+### `local_schedule_device_mapping` — Mapping thiết bị ảo lịch trình cục bộ
+
+| Cột                          | Kiểu                            | Mô tả                      |
+| ---------------------------- | ------------------------------- | -------------------------- |
+| `local_schedule_id`          | INT FK→local_schedules          | Lịch trình cục bộ          |
+| `schedule_virtual_device_id` | INT FK→schedule_virtual_devices | Thiết bị ảo trong schedule |
+| `device_id`                  | VARCHAR(255) FK→devices         | Thiết bị vật lý            |
+
+> PK: (`local_schedule_id`, `schedule_virtual_device_id`)
+
+---
+
+### `local_rules` — Quy tắc cục bộ (per-dryer)
+
+Instance per-dryer của global rule, kèm mapping thiết bị ảo → thiết bị thực.
+
+| Cột          | Kiểu          | Mô tả                 |
+| ------------ | ------------- | --------------------- |
+| `id`         | INT PK AUTO   | ID                    |
+| `dryer_id`   | INT FK→dryers | Máy sấy               |
+| `rule_id`    | INT FK→rules  | Rule gốc (mẫu)        |
+| `name`       | VARCHAR(255)  | Tên do người dùng đặt |
+| `created_at` | DATETIME      | Thời điểm tạo         |
+
+---
+
+### `local_rule_device_mapping` — Mapping thiết bị ảo quy tắc cục bộ
+
+| Cột                      | Kiểu                        | Mô tả                  |
+| ------------------------ | --------------------------- | ---------------------- |
+| `local_rule_id`          | INT FK→local_rules          | Quy tắc cục bộ         |
+| `rule_virtual_device_id` | INT FK→rule_virtual_devices | Thiết bị ảo trong rule |
+| `device_id`              | VARCHAR(255) FK→devices     | Thiết bị vật lý        |
+
+> PK: (`local_rule_id`, `rule_virtual_device_id`)
+
+---
+
+### `batch_schedule_queue` — Hàng đợi lịch trình trong mẻ sấy
+
+Các local schedule được chạy tuần tự theo `queue_order` trong một mẻ.
+
+| Cột                 | Kiểu                                                                | Mô tả                 |
+| ------------------- | ------------------------------------------------------------------- | --------------------- |
+| `id`                | INT PK AUTO                                                         | ID                    |
+| `batch_id`          | INT FK→batches                                                      | Mẻ sấy                |
+| `local_schedule_id` | INT FK→local_schedules                                              | Lịch trình cục bộ     |
+| `queue_order`       | INT                                                                 | Thứ tự trong hàng đợi |
+| `status`            | ENUM('pending','running','completed','cancelled') DEFAULT 'pending' | Trạng thái            |
+| `started_at`        | DATETIME NULL                                                       | Thời điểm bắt đầu     |
+| `completed_at`      | DATETIME NULL                                                       | Thời điểm hoàn thành  |
+
+---
+
+### `batch_rule_set` — Tập quy tắc trong mẻ sấy
+
+Các local rule được đánh giá đồng thời (polling mỗi 3 giây) trong một mẻ.
+
+| Cột              | Kiểu                 | Mô tả           |
+| ---------------- | -------------------- | --------------- |
+| `id`             | INT PK AUTO          | ID              |
+| `batch_id`       | INT FK→batches       | Mẻ sấy          |
+| `local_rule_id`  | INT FK→local_rules   | Quy tắc cục bộ  |
+| `priority_order` | INT                  | Thứ tự ưu tiên  |
+| `active`         | BOOLEAN DEFAULT TRUE | Đang hoạt động? |
+
+> UNIQUE: (`batch_id`, `local_rule_id`)
+
+---
+
+### `batch_schedule_device_mapping` — Mapping mẻ sấy–lịch trình–thiết bị
+
+| Cột                          | Kiểu                            | Mô tả                      |
+| ---------------------------- | ------------------------------- | -------------------------- |
+| `batch_id`                   | INT FK→batches                  | Mẻ sấy                     |
+| `schedule_id`                | INT FK→schedules                | Schedule gốc               |
+| `schedule_virtual_device_id` | INT FK→schedule_virtual_devices | Thiết bị ảo trong schedule |
+| `device_id`                  | VARCHAR(255) FK→devices         | Thiết bị vật lý            |
+
+> PK: (`batch_id`, `schedule_id`, `schedule_virtual_device_id`, `device_id`)
+
+---
+
+### `batch_rule_device_mapping` — Mapping mẻ sấy–quy tắc–thiết bị
+
+| Cột                      | Kiểu                        | Mô tả                  |
+| ------------------------ | --------------------------- | ---------------------- |
+| `batch_id`               | INT FK→batches              | Mẻ sấy                 |
+| `rule_id`                | INT FK→rules                | Rule gốc               |
+| `rule_virtual_device_id` | INT FK→rule_virtual_devices | Thiết bị ảo trong rule |
+| `device_id`              | VARCHAR(255) FK→devices     | Thiết bị vật lý        |
+
+> PK: (`batch_id`, `rule_id`, `rule_virtual_device_id`, `device_id`)
 
 ---
 
@@ -328,6 +434,9 @@ Quan hệ 3 ngôi, khoá chính tổng hợp.
 | `stages`           | Giai đoạn 1 (offset 0), Giai đoạn 2 (offset 10)                                        |
 | `schedule_actions` | Nhiệt độ 60°C + bật quạt (giai đoạn 1); Nhiệt độ 50°C + tắt quạt (giai đoạn 2)         |
 | `rules`            | Rule nhiệt độ cao (threshold > 70°C cho Xoài)                                          |
+| `conditions`       | Nhiệt độ > 70                                                                          |
+| `local_schedules`  | Lịch trình xoài – Máy 1 (mapping Temperature → sensor, Fan Speed → worker)             |
+| `local_rules`      | Rule nhiệt – Máy 1 (mapping Temperature → sensor, Fan Speed → worker)                  |
 | `conditions`       | Nhiệt độ > 70                                                                          |
 | `rule_actions`     | Bật quạt max khi nhiệt độ vượt ngưỡng                                                  |
 | `event_types`      | device_control, device_change, policy_change, alert                                    |

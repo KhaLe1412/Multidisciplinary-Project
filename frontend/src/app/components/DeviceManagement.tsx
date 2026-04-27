@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
-import { Dryer, DryerStatus } from "../data/mockData";
+import type { Dryer, DryerStatus } from "../data/mockData";
+import { apiFetchConnectedDevices } from "../api/controlApi";
 import {
   apiCreateArea,
   apiUpdateArea,
@@ -15,8 +16,8 @@ import {
   apiUpdateDevice,
   apiDeleteDevice,
   apiFetchUsers,
-  SystemUser,
 } from "../api/deviceManagementApi";
+import type { SystemUser } from "../api/deviceManagementApi";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   Plus,
@@ -163,6 +164,14 @@ export function DeviceManagement() {
   const [search, setSearch] = useState("");
   const [expandedAreas, setExpandedAreas] = useState<Set<string>>(new Set());
   const [expandedDryers, setExpandedDryers] = useState<Set<string>>(new Set());
+  const [connectedDeviceIds, setConnectedDeviceIds] = useState<Set<string>>(
+    new Set(),
+  );
+  useEffect(() => {
+    apiFetchConnectedDevices()
+      .then(setConnectedDeviceIds)
+      .catch(() => {});
+  }, []);
 
   // Area management state
   const [addAreaOpen, setAddAreaOpen] = useState(false);
@@ -1770,9 +1779,18 @@ export function DeviceManagement() {
                                               Mã: {device.id}
                                             </p>
                                           </div>
-                                          <span
-                                            className={`w-2 h-2 rounded-full ${device.status ? "bg-green-500" : "bg-slate-400"}`}
-                                          />
+                                          <div className="flex flex-col items-end gap-1">
+                                            {connectedDeviceIds.has(
+                                              device.id,
+                                            ) && (
+                                              <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold whitespace-nowrap">
+                                                Đã kết nối
+                                              </span>
+                                            )}
+                                            <span
+                                              className={`w-2 h-2 rounded-full ${device.status ? "bg-green-500" : "bg-slate-400"}`}
+                                            />
+                                          </div>
                                         </div>
                                         <div className="space-y-1 text-xs">
                                           <div className="flex justify-between">

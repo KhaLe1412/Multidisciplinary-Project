@@ -5,7 +5,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import {
+import type {
   Dryer,
   Area,
   DeviceTypeModel,
@@ -17,6 +17,8 @@ import {
   UserAccount,
   Fruit,
   BatchRecord,
+} from "../data/mockData";
+import {
   initialDryers,
   initialAreas,
   initialDeviceTypes,

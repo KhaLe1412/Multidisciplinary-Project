@@ -439,7 +439,7 @@ export async function apiSaveSchedule(s: Schedule): Promise<Schedule> {
     }
 
     // Xóa SVDs không còn dùng
-    await Promise.all(
+    const deleteResults = await Promise.all(
       [...oldSvdIds]
         .filter((id) => !keepIds.has(id))
         .map((id) =>
@@ -448,6 +448,15 @@ export async function apiSaveSchedule(s: Schedule): Promise<Schedule> {
           }),
         ),
     );
+    const failedDelete = deleteResults.find((r) => !r.ok && r.status !== 404);
+    if (failedDelete) {
+      const err = await failedDelete
+        .json()
+        .catch(() => ({ detail: `HTTP ${failedDelete.status}` }));
+      throw new Error(
+        err.detail ?? `Không thể xóa thiết bị ảo: HTTP ${failedDelete.status}`,
+      );
+    }
 
     // T?o SVDs m?i
     for (const obj of objects) {

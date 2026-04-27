@@ -58,7 +58,7 @@ def create_crop(body: CropCreate, current_user: dict = Depends(get_current_user)
             (body.name, body.description),
         )
         conn.commit()
-        write_system_log("crop_change", "info", f"Crop '{body.name}', crop_id: {cur.lastrowid} được tạo", user_id=current_user["id"])
+        write_system_log("CROP_CHANGE", "info", f"Crop '{body.name}', crop_id: {cur.lastrowid} được tạo", user_id=current_user["id"])
         return {"id": cur.lastrowid, **body.model_dump()}
     finally:
         conn.close()
@@ -77,7 +77,7 @@ def update_crop(crop_id: int, body: CropUpdate, current_user: dict = Depends(get
             clause = ", ".join(f"{k} = %s" for k in updates)
             cur.execute(f"UPDATE crops SET {clause} WHERE id = %s", (*updates.values(), crop_id))
             conn.commit()
-        write_system_log("crop_change", "info", f"Crop '{updates.get('name', 'id ' + str(crop_id))}', crop_id: {crop_id} được cập nhật", user_id=current_user["id"])
+        write_system_log("CROP_CHANGE", "info", f"Crop '{updates.get('name', 'id ' + str(crop_id))}', crop_id: {crop_id} được cập nhật", user_id=current_user["id"])
         cur.execute("SELECT * FROM crops WHERE id = %s", (crop_id,))
         return cur.fetchone()
     finally:
@@ -98,9 +98,9 @@ def delete_crop(crop_id: int, current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=409, detail="Crop đang được dùng bởi rule, không thể xoá")
         cur.execute("DELETE FROM crops WHERE id = %s", (crop_id,))
         if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Crop not found")
+            raise HTTPException(status_code=404, detail="Crop không tồn tại")
         conn.commit()
-        write_system_log("crop_change", "warning", f"Crop id: {crop_id} được xoá", user_id=current_user["id"])
+        write_system_log("CROP_CHANGE", "warning", f"Crop id: {crop_id} được xoá", user_id=current_user["id"])
     finally:
         conn.close()
 
@@ -149,18 +149,34 @@ def update_schedule_virtual_device(svd_id: int, body: ScheduleVirtualDeviceUpdat
 def delete_schedule_virtual_device(svd_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_db()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM schedule_virtual_devices WHERE id = %s", (svd_id,))
-        if not cur.fetchone():
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, schedule_id FROM schedule_virtual_devices WHERE id = %s", (svd_id,))
+        svd = cur.fetchone()
+        if not svd:
             raise HTTPException(status_code=404, detail="Schedule virtual device not found")
         cur.execute(
-            "SELECT COUNT(*) FROM schedule_actions WHERE schedule_virtual_device_id = %s", (svd_id,)
+            "SELECT COUNT(*) AS cnt FROM schedule_actions WHERE schedule_virtual_device_id = %s", (svd_id,)
         )
-        if cur.fetchone()[0] > 0:
+        if cur.fetchone()["cnt"] > 0:
             raise HTTPException(
                 status_code=409,
                 detail="Schedule virtual device đang được dùng bởi schedule actions, không thể xoá",
             )
+        # Clean up local schedules that reference this virtual device
+        cur.execute(
+            "SELECT DISTINCT local_schedule_id FROM local_schedule_device_mapping WHERE schedule_virtual_device_id = %s",
+            (svd_id,),
+        )
+        orphan_ids = [r["local_schedule_id"] for r in cur.fetchall()]
+        if orphan_ids:
+            placeholders = ",".join(["%s"] * len(orphan_ids))
+            cur.execute(f"DELETE FROM local_schedule_device_mapping WHERE local_schedule_id IN ({placeholders})", tuple(orphan_ids))
+            cur.execute(f"DELETE FROM local_schedules WHERE id IN ({placeholders})", tuple(orphan_ids))
+        # Xóa mapping lịch sử mẻ sấy trước khi xóa SVD
+        cur.execute(
+            "DELETE FROM batch_schedule_device_mapping WHERE schedule_virtual_device_id = %s",
+            (svd_id,),
+        )
         cur.execute("DELETE FROM schedule_virtual_devices WHERE id = %s", (svd_id,))
         conn.commit()
     finally:
@@ -211,26 +227,38 @@ def update_rule_virtual_device(rvd_id: int, body: RuleVirtualDeviceUpdate):
 def delete_rule_virtual_device(rvd_id: int):
     conn = get_db()
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM rule_virtual_devices WHERE id = %s", (rvd_id,))
-        if not cur.fetchone():
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, rule_id FROM rule_virtual_devices WHERE id = %s", (rvd_id,))
+        rvd = cur.fetchone()
+        if not rvd:
             raise HTTPException(status_code=404, detail="Rule virtual device not found")
         cur.execute(
-            "SELECT COUNT(*) FROM conditions WHERE rule_virtual_device_id = %s", (rvd_id,)
+            "SELECT COUNT(*) AS cnt FROM conditions WHERE rule_virtual_device_id = %s", (rvd_id,)
         )
-        if cur.fetchone()[0] > 0:
+        if cur.fetchone()["cnt"] > 0:
             raise HTTPException(
                 status_code=409,
                 detail="Rule virtual device đang được dùng bởi conditions, không thể xoá",
             )
         cur.execute(
-            "SELECT COUNT(*) FROM rule_actions WHERE rule_virtual_device_id = %s", (rvd_id,)
+            "SELECT COUNT(*) AS cnt FROM rule_actions WHERE rule_virtual_device_id = %s", (rvd_id,)
         )
-        if cur.fetchone()[0] > 0:
+        if cur.fetchone()["cnt"] > 0:
             raise HTTPException(
                 status_code=409,
                 detail="Rule virtual device đang được dùng bởi rule actions, không thể xoá",
             )
+        # Clean up local rules that reference this virtual device
+        cur.execute(
+            "SELECT DISTINCT local_rule_id FROM local_rule_device_mapping WHERE rule_virtual_device_id = %s",
+            (rvd_id,),
+        )
+        orphan_ids = [r["local_rule_id"] for r in cur.fetchall()]
+        if orphan_ids:
+            placeholders = ",".join(["%s"] * len(orphan_ids))
+            cur.execute(f"DELETE FROM local_rule_device_mapping WHERE local_rule_id IN ({placeholders})", tuple(orphan_ids))
+            cur.execute(f"DELETE FROM local_rules WHERE id IN ({placeholders})", tuple(orphan_ids))
+        cur.execute("DELETE FROM batch_rule_device_mapping WHERE rule_virtual_device_id = %s", (rvd_id,))
         cur.execute("DELETE FROM rule_virtual_devices WHERE id = %s", (rvd_id,))
         conn.commit()
     finally:
@@ -321,7 +349,7 @@ def create_schedule(body: ScheduleCreate, current_user: dict = Depends(get_curre
                 (schedule_id, vd.name, vd.device_type_id),
             )
         conn.commit()
-        write_system_log("schedule_change", "info", f"Schedule '{body.name}', schedule_id: {schedule_id} được tạo", user_id=current_user["id"])
+        write_system_log("SCHEDULE_CHANGE", "info", f"Schedule '{body.name}', schedule_id: {schedule_id} được tạo", user_id=current_user["id"])
         return _fetch_schedule(cur, schedule_id)
     finally:
         conn.close()
@@ -340,7 +368,7 @@ def update_schedule(schedule_id: int, body: ScheduleUpdate, current_user: dict =
             clause = ", ".join(f"{k} = %s" for k in updates)
             cur.execute(f"UPDATE schedules SET {clause} WHERE id = %s", (*updates.values(), schedule_id))
             conn.commit()
-            write_system_log("schedule_change", "info", f"Schedule '{updates.get('name', 'id ' + str(schedule_id))}', schedule_id: {schedule_id} được cập nhật", user_id=current_user["id"])
+            write_system_log("SCHEDULE_CHANGE", "info", f"Schedule '{updates.get('name', 'id ' + str(schedule_id))}', schedule_id: {schedule_id} được cập nhật", user_id=current_user["id"])
         return _fetch_schedule(cur, schedule_id)
     finally:
         conn.close()
@@ -355,6 +383,12 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(get_current_u
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Schedule not found")
         # Cascade: actions → stages → schedule_virtual_devices → mapping → schedule
+        # Also clean up local_schedules referencing this schedule
+        cur.execute(
+            "DELETE FROM local_schedule_device_mapping WHERE local_schedule_id IN (SELECT id FROM local_schedules WHERE schedule_id = %s)",
+            (schedule_id,),
+        )
+        cur.execute("DELETE FROM local_schedules WHERE schedule_id = %s", (schedule_id,))
         cur.execute(
             "DELETE sa FROM schedule_actions sa JOIN stages s ON s.id = sa.stage_id WHERE s.schedule_id = %s",
             (schedule_id,),
@@ -364,7 +398,7 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(get_current_u
         cur.execute("DELETE FROM schedule_virtual_devices WHERE schedule_id = %s", (schedule_id,))
         cur.execute("DELETE FROM schedules WHERE id = %s", (schedule_id,))
         conn.commit()
-        write_system_log("schedule_change", "warning", f"Schedule id: {schedule_id} được xoá", user_id=current_user["id"])
+        write_system_log("SCHEDULE_CHANGE", "warning", f"Schedule id: {schedule_id} được xoá", user_id=current_user["id"])
     finally:
         conn.close()
 
@@ -705,7 +739,7 @@ def create_rule(body: RuleCreate, current_user: dict = Depends(get_current_user)
                 (rule_id, vd.name, vd.device_type_id),
             )
         conn.commit()
-        write_system_log("rule_change", "info", f"Rule '{body.name}', rule_id: {rule_id} được tạo", user_id=current_user["id"])
+        write_system_log("RULE_CHANGE", "info", f"Rule '{body.name}', rule_id: {rule_id} được tạo", user_id=current_user["id"])
         return _fetch_rule(cur, rule_id)
     finally:
         conn.close()
@@ -723,7 +757,7 @@ def update_rule(rule_id: int, body: RuleUpdate, current_user: dict = Depends(get
             clause = ", ".join(f"{k} = %s" for k in updates)
             cur.execute(f"UPDATE rules SET {clause} WHERE id = %s", (*updates.values(), rule_id))
             conn.commit()
-        write_system_log("rule_change", "info", f"Rule '{updates.get('name', 'id ' + str(rule_id))}', rule_id: {rule_id} được cập nhật", user_id=current_user["id"])
+        write_system_log("RULE_CHANGE", "info", f"Rule '{updates.get('name', 'id ' + str(rule_id))}', rule_id: {rule_id} được cập nhật", user_id=current_user["id"])
         return _fetch_rule(cur, rule_id)
     finally:
         conn.close()
@@ -738,6 +772,12 @@ def delete_rule(rule_id: int, current_user: dict = Depends(get_current_user)):
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Rule not found")
         # Cascade: conditions → rule_actions → value_pairs → mapping → rule_virtual_devices → rule
+        # Also clean up local_rules referencing this rule
+        cur.execute(
+            "DELETE FROM local_rule_device_mapping WHERE local_rule_id IN (SELECT id FROM local_rules WHERE rule_id = %s)",
+            (rule_id,),
+        )
+        cur.execute("DELETE FROM local_rules WHERE rule_id = %s", (rule_id,))
         cur.execute(
             "DELETE c FROM conditions c JOIN value_pairs vp ON vp.id = c.value_pair_id WHERE vp.rule_id = %s",
             (rule_id,),
@@ -751,8 +791,7 @@ def delete_rule(rule_id: int, current_user: dict = Depends(get_current_user)):
         cur.execute("DELETE FROM rule_virtual_devices WHERE rule_id = %s", (rule_id,))
         cur.execute("DELETE FROM rules WHERE id = %s", (rule_id,))
         conn.commit()
-        write_system_log("rule_change", "warning", f"Rule id: {rule_id} được xoá", user_id=current_user["id"])
-
+        write_system_log("RULE_CHANGE", "warning", f"Rule id: {rule_id} được xoá", user_id=current_user["id"])
     finally:
         conn.close()
 
@@ -783,7 +822,7 @@ def create_rule_virtual_device(rule_id: int, body: RuleVirtualDeviceCreate):
         cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id FROM rules WHERE id = %s", (rule_id,))
         if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Rule not found")
+            raise HTTPException(status_code=404, detail="Rule không tồn tại")
         cur.execute(
             "INSERT INTO rule_virtual_devices (rule_id, name, device_type_id) VALUES (%s, %s, %s)",
             (rule_id, body.name, body.device_type_id),

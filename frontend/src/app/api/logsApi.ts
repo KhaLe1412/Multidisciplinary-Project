@@ -3,7 +3,7 @@
  * Fetch system_logs từ backend API.
  */
 
-import { SystemLog } from "../data/mockData";
+import type { SystemLog } from "../data/mockData";
 import { getAuthHeaders } from "./apiClient";
 
 const BASE =
@@ -42,11 +42,19 @@ export async function apiFetchSystemLogs(): Promise<SystemLog[]> {
   return data.map(mapLog);
 }
 
-/** Lấy system_logs của một máy sấy (dùng cho giao diện điều khiển). */
+/** Lấy system_logs của một máy sấy (dùng cho giao diện điều khiển).
+ *
+ * @param sinceId  Khi > 0, chỉ trả về log có id > sinceId (incremental). Mặc định 0 = lấy 20 mới nhất.
+ */
 export async function apiFetchDryerLogs(
   dryerId: number | string,
+  sinceId = 0,
 ): Promise<SystemLog[]> {
-  const res = await fetch(`${BASE}/api/logs/dryer/${dryerId}`, {
+  const url =
+    sinceId > 0
+      ? `${BASE}/api/logs/dryer/${dryerId}?since=${sinceId}`
+      : `${BASE}/api/logs/dryer/${dryerId}`;
+  const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`apiFetchDryerLogs: ${res.status}`);

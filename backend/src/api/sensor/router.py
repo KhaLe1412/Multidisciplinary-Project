@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from src.auth import get_current_user
-from src.db import get_db, write_system_log
+from src.db import get_db, write_system_log, get_device_name
 import src.device_manager as device_manager
 
 router = APIRouter()
@@ -59,10 +59,19 @@ def set_device(feed_id: str, value: str, current_user: dict = Depends(get_curren
     if not ok:
         raise HTTPException(status_code=404, detail="Device not found")
     dryer_id = device_manager.get_dryer_by_devices(feed_id)
-    write_system_log("device_control", "info",
-                     f"Gửi lệnh thiết bị {feed_id} = {float_value}",
+    device_name = get_device_name(feed_id)
+    write_system_log("DEVICE_CONTROL", "info",
+                     f"Gửi lệnh thiết bị {device_name} = {float_value}",
                      user_id=current_user["id"], dryer_id=dryer_id)
     return {"feed_id": feed_id, "value": float_value}
+
+
+# ─── Danh sách thiết bị đang kết nối ─────────────────────────────────────────
+
+@router.get("/api/sensor/connected-devices")
+def get_connected_devices():
+    """Trả về danh sách device IDs đang kết nối với Adafruit IO."""
+    return {"connected": device_manager.get_connected_device_ids()}
 
 
 # ─── Đồng bộ clients thủ công ────────────────────────────────────────────────

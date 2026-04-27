@@ -41,7 +41,19 @@ def get_list_devices(type: str = None) -> dict:
     return {"devices": [row[0] for row in rows]}
 
 
-# ─── System log helper ────────────────────────────────────────────────────────
+def get_device_name(device_id: str) -> str:
+    """Trả về tên thiết bị theo device_id; fallback về device_id nếu không tìm thấy."""
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM devices WHERE id = %s", (device_id,))
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    return row[0] if row and row[0] else device_id
+
+
+# ─── System log helper ──────────────────────────────────────────────────────────────────────────────────
 
 _EVENT_TYPE_IDS: dict = {}
 _SEVERITY_IDS: dict = {}
@@ -52,8 +64,8 @@ def _load_log_ids() -> None:
     conn = get_db()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id, name FROM event_types")
-        _EVENT_TYPE_IDS = {name: eid for eid, name in cur.fetchall()}
+        cur.execute("SELECT id, event_code FROM event_types")
+        _EVENT_TYPE_IDS = {event_code: eid for eid, event_code in cur.fetchall()}
         cur.execute("SELECT id, level FROM severity_levels")
         _SEVERITY_IDS = {level: sid for sid, level in cur.fetchall()}
     finally:
@@ -61,7 +73,7 @@ def _load_log_ids() -> None:
 
 
 def write_system_log(
-    event_type: str,
+    event_code: str,
     severity: str,
     description: str,
     user_id=None,
@@ -71,10 +83,10 @@ def write_system_log(
     try:
         if not _EVENT_TYPE_IDS or not _SEVERITY_IDS:
             _load_log_ids()
-        et_id = _EVENT_TYPE_IDS.get(event_type)
+        et_id = _EVENT_TYPE_IDS.get(event_code)
         sv_id = _SEVERITY_IDS.get(severity)
         if et_id is None or sv_id is None:
-            print(f"[system_log] Không tìm thấy event_type={event_type!r} hoặc severity={severity!r}")
+            print(f"[system_log] Không tìm thấy event_code={event_code!r} hoặc severity={severity!r}")
             return
         conn = get_db()
         try:

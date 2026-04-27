@@ -194,11 +194,11 @@ class RuleActionUpdate(BaseModel):
 
 # ─── Batches ──────────────────────────────────────────────────────────────────
 
-class BatchStartManual(BaseModel):
+class BatchStart(BaseModel):
     dryer_id: int
     crop_id: Optional[int] = None
     input_weight: Optional[float] = None
-    runtime: int  # giây
+    runtime: Optional[int] = None  # giây, None = manual stop only
 
 
 class BatchEnd(BaseModel):
@@ -216,12 +216,46 @@ class RvdDeviceMapping(BaseModel):
     device_id: str
 
 
-class BatchStartSchedule(BatchStartManual):
+# ─── Local Schedules ─────────────────────────────────────────────────────────
+
+class LocalScheduleCreate(BaseModel):
+    name: str
     schedule_id: int
     mappings: List[SvdDeviceMapping]
 
 
-class BatchStartRule(BatchStartManual):
+class LocalScheduleUpdate(BaseModel):
+    name: Optional[str] = None
+    mappings: Optional[List[SvdDeviceMapping]] = None
+
+
+# ─── Local Rules ──────────────────────────────────────────────────────────────
+
+class LocalRuleCreate(BaseModel):
+    name: str
     rule_id: int
     mappings: List[RvdDeviceMapping]
+
+
+class LocalRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    mappings: Optional[List[RvdDeviceMapping]] = None
+
+
+# ─── Batch Schedule/Rule Control ──────────────────────────────────────────────
+
+class BatchAddSchedules(BaseModel):
+    local_schedule_ids: List[int]
+
+
+class BatchAddRules(BaseModel):
+    local_rule_ids: List[int]
+
+
+class BatchRuleToggle(BaseModel):
+    enabled: bool
+
+
+class BatchScheduleToggle(BaseModel):
+    enabled: bool
 

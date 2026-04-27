@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+﻿import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
 import { useApp } from "../context/AppContext";
 import {
   fetchDryerSensors,
   sendActuatorCommand,
   fetchDeviceLogs,
-  apiFetchConnectedDevices,
   apiStartBatch,
   apiEndBatch,
   apiGetBatchSchedules,
@@ -287,7 +286,6 @@ function ManualActuatorCard({
   disabled,
   onUpdate,
   serverValue,
-  isConnected,
 }: {
   device: Device;
   dtName: string;
@@ -296,7 +294,6 @@ function ManualActuatorCard({
   disabled: boolean;
   onUpdate: (updates: Partial<Device>, description: string) => void;
   serverValue?: number | null;
-  isConnected?: boolean;
 }) {
   const Icon = deviceIcon[device.deviceTypeId] || Cpu;
   const cls = deviceColor[device.deviceTypeId] || "text-slate-500 bg-slate-100";
@@ -365,11 +362,6 @@ function ManualActuatorCard({
             {device.name}
           </p>
           <p className="text-xs text-slate-400">{device.id}</p>
-          {isConnected && (
-            <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">
-              Đã kết nối
-            </span>
-          )}
         </div>
         <button
           disabled={disabled}
@@ -683,16 +675,6 @@ export function DrierControl() {
   const isActive = dryer?.status === "running";
   const isInactive = dryer?.status === "off";
 
-  /* ── Connected devices ── */
-  const [connectedDeviceIds, setConnectedDeviceIds] = useState<Set<string>>(
-    new Set(),
-  );
-  useEffect(() => {
-    apiFetchConnectedDevices()
-      .then(setConnectedDeviceIds)
-      .catch(() => {});
-  }, []);
-
   /* ── API: sensor polling ── */
   const POLL_INTERVAL_MS = 5000;
   const [sensorReadings, setSensorReadings] = useState<
@@ -897,10 +879,7 @@ export function DrierControl() {
   const [batchWeight, setBatchWeight] = useState("");
   const [batchRunSec, setBatchRunSec] = useState("");
   const [useRuntime, setUseRuntime] = useState(false);
-  // Persist serverBatchId across navigation via dryer.activeBatch.id (stored in AppContext)
-  const [serverBatchId, setServerBatchId] = useState<number | null>(
-    () => (dryer?.activeBatch as any)?.id ?? null,
-  );
+  const [serverBatchId, setServerBatchId] = useState<number | null>(null);
 
   /* local schedules / rules (fetched per dryer) */
   const [localSchedules, setLocalSchedules] = useState<LocalScheduleData[]>([]);
@@ -948,12 +927,7 @@ export function DrierControl() {
           apiGetBatchSchedules(serverBatchId),
           apiGetBatchRules(serverBatchId),
         ]);
-        // Filter out completed/cancelled entries from the visible queue
-        setBatchScheduleQueue(
-          schedData.schedules.filter(
-            (s) => s.status !== "completed" && s.status !== "cancelled",
-          ),
-        );
+        setBatchScheduleQueue(schedData.schedules);
         setBatchSchedulesEnabled(schedData.enabled);
         setBatchRuleSet(ruleData.rules);
         setBatchRulesEnabled(ruleData.enabled);
@@ -1049,10 +1023,7 @@ export function DrierControl() {
   );
 
   /* unified start batch */
-  const startBatch = async (
-    scheduleIds: number[] = [],
-    ruleIds: number[] = [],
-  ) => {
+  const startBatch = async (scheduleIds: number[] = [], ruleIds: number[] = []) => {
     if (!dryer || isActive) return;
     const fruitName = fruits.find((f) => f.id === batchFruitId)?.name || "";
     const weight = parseFloat(batchWeight) || 0;
@@ -1085,13 +1056,6 @@ export function DrierControl() {
         runtime,
       );
       setServerBatchId(r.id);
-      // Persist batch id into AppContext so it survives page navigation
-      updateDryer((d) => ({
-        ...d,
-        activeBatch: d.activeBatch
-          ? { ...d.activeBatch, id: r.id }
-          : d.activeBatch,
-      }));
 
       // Add schedules and rules to the newly created batch
       if (scheduleIds.length > 0) {
@@ -1290,6 +1254,7 @@ export function DrierControl() {
       )}
 
       <div className="p-6 space-y-6">
+        {/* â”€â”€ Batch Config (below mode selector, above sensors) â”€â”€ */}
         {/* ── Batch Config with DnD ── */}
         {!isActive && (
           <BatchConfigDnD
@@ -1355,6 +1320,7 @@ export function DrierControl() {
           </div>
         )}
 
+        {/* MAIN_LAYOUT */}
         {/* â•â•â• MAIN TWO-COLUMN LAYOUT: Controls LEFT, Sensors RIGHT â•â•â• */}
         <div className="flex gap-6 flex-col lg:flex-row">
           {/* â”€â”€ LEFT: Actuator Controls / Values â”€â”€ */}
@@ -1374,7 +1340,6 @@ export function DrierControl() {
                     valueRange={dt?.valueRange}
                     disabled={false}
                     serverValue={actuatorReadings.get(dev.id)?.value ?? null}
-                    isConnected={connectedDeviceIds.has(dev.id)}
                     onUpdate={(updates, desc) =>
                       updateDeviceManual(dev.id, updates, desc || undefined)
                     }
@@ -1469,11 +1434,6 @@ export function DrierControl() {
                             {dev.name}
                           </p>
                           <p className="text-xs text-slate-400">{dev.id}</p>
-                          {connectedDeviceIds.has(dev.id) && (
-                            <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">
-                              Đã kết nối
-                            </span>
-                          )}
                         </div>
                         <span
                           className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${

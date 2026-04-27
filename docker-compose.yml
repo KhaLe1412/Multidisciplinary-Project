@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   # ─── MySQL Database ──────────────────────────────────────────────────────────
   mysql:
@@ -8,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_HOST: "%"
       # Không đặt MYSQL_DATABASE ở đây – để file tables.sql tự tạo database DADN
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     volumes:
@@ -60,6 +60,8 @@ services:
       dockerfile: Dockerfile
     container_name: driersystem-backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       DB_HOST: mysql
       DB_PORT: 3306

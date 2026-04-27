@@ -61,13 +61,15 @@ Nginx đóng vai trò reverse proxy: mọi request `/api/...` từ browser đư�
 
 **Biến môi trường:**
 
-| Biến          | Giá trị        |
-| ------------- | -------------- |
-| `DB_HOST`     | `mysql`        |
-| `DB_PORT`     | `3306`         |
-| `DB_NAME`     | `DADN`         |
-| `DB_USER`     | `root`         |
-| `DB_PASSWORD` | `rootpassword` |
+| Biến                | Nguồn          | Giá trị mặc định (Docker) |
+| ------------------- | -------------- | ------------------------- |
+| `DB_HOST`           | docker-compose | `mysql`                   |
+| `DB_PORT`           | docker-compose | `3306`                    |
+| `DB_NAME`           | docker-compose | `DADN`                    |
+| `DB_USER`           | docker-compose | `root`                    |
+| `DB_PASSWORD`       | docker-compose | `rootpassword`            |
+| `ADAFRUIT_USERNAME` | `.env`         | _(bắt buộc điền)_         |
+| `ADAFRUIT_KEY`      | `.env`         | _(bắt buộc điền)_         |
 
 **Phụ thuộc:** Khởi động sau khi `mysql` healthy.
 
@@ -94,6 +96,56 @@ Nginx đóng vai trò reverse proxy: mọi request `/api/...` từ browser đư�
 **Nginx reverse proxy:** Mọi request `/api/*` được proxy tới `http://backend:8000/api/`. SPA routing được xử lý bởi `try_files`.
 
 **Phụ thuộc:** Khởi động sau khi `backend` started.
+
+---
+
+## Cấu hình biến môi trường
+
+Backend đọc credentials Adafruit IO từ biến môi trường. Cần thiết lập trước khi chạy.
+
+### Bước 1 — Tạo file `.env`
+
+Sao chép file mẫu và điền thông tin thực tế:
+
+```bash
+# Windows PowerShell
+Copy-Item .env.example .env
+```
+
+Sau đó mở `.env` và chỉnh sửa:
+
+```env
+ADAFRUIT_USERNAME=your_adafruit_username
+ADAFRUIT_KEY=your_adafruit_key
+```
+
+> Lấy key tại: https://io.adafruit.com → bấm vào biểu tượng chìa khóa **My Key**
+
+File `.env` đã được thêm vào `.gitignore` — không bao giờ bị commit lên Git.
+
+### Bước 2 — Chạy Docker (tự động đọc `.env`)
+
+Docker Compose tự động load file `.env` ở thư mục gốc và inject vào container `backend`. Không cần thêm bước nào.
+
+```bash
+docker-compose up -d --build
+```
+
+### Chạy local dev (uvicorn trực tiếp)
+
+Khi chạy ngoài Docker, cần set biến môi trường trong terminal trước khi chạy uvicorn:
+
+```powershell
+$env:ADAFRUIT_USERNAME = "your_adafruit_username"
+$env:ADAFRUIT_KEY      = "your_adafruit_key"
+uvicorn.exe main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+Hoặc dùng một lệnh:
+
+```powershell
+$env:ADAFRUIT_USERNAME="your_adafruit_username"; $env:ADAFRUIT_KEY="your_adafruit_key"; uvicorn.exe main:app --host 0.0.0.0 --port 8001 --reload
+```
 
 ---
 

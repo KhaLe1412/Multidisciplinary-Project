@@ -5,6 +5,7 @@ Quản lý động các MQTT Client (Adafruit IO).
 - Cung cấp set_device_value / get_latest_db_value / is_registered cho các module khác.
 - Gọi sync_clients() thủ công qua POST /api/sensor/refresh-clients.
 """
+import os
 import threading
 import time
 from typing import Dict, Optional
@@ -12,8 +13,8 @@ from typing import Dict, Optional
 from client import Client as ClientClass
 from src.db import get_db, insert_sensor_log, get_list_devices, write_system_log
 
-_USERNAME = "khahcmut"
-_KEY      = "aio_NrIN072z6nxyvQGIfOVsRADCYxCn"
+_USERNAME = os.environ["ADAFRUIT_USERNAME"]
+_KEY      = os.environ["ADAFRUIT_KEY"]
 
 _clients: Dict[str, ClientClass] = {}
 _lock = threading.Lock()
@@ -66,6 +67,11 @@ def is_registered(feed_id: str) -> bool:
     """Kiểm tra device có đang được quản lý không."""
     with _lock:
         return feed_id in _clients
+
+def get_connected_device_ids() -> list:
+    """Lấy danh sách tất cả device IDs đang kết nối với Adafruit."""
+    with _lock:
+        return list(_clients.keys())
 
 def get_dryer_by_devices(feed_id: str) -> int:
     """Lấy id máy sấy từ feed_id của device."""

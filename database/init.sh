@@ -12,4 +12,7 @@ mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /db_files/seeds.sql
 echo "[init] Đang load procedures.sql..."
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /db_files/procedures.sql
 
+echo "[init] Đang load analytics.sql..."
+mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /db_files/analytics_test_data.sql
+
 echo "[init] Hoàn tất khởi tạo database DADN."

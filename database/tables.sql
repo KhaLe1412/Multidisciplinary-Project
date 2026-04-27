@@ -190,10 +190,94 @@ CREATE TABLE batches (
     start_time DATETIME,
     end_time DATETIME,
     rating INT,
+    runtime INT NULL,
+    schedule_enabled BOOLEAN DEFAULT FALSE,
+    rule_enabled BOOLEAN DEFAULT FALSE,
     dryer_id INT,
     crop_id INT,
     FOREIGN KEY (dryer_id) REFERENCES dryers(id),
     FOREIGN KEY (crop_id) REFERENCES crops(id)
+);
+
+-- -----------------------------------------------------
+-- Lịch trình cục bộ (per-dryer instance of global schedule)
+-- -----------------------------------------------------
+CREATE TABLE local_schedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    dryer_id INT,
+    schedule_id INT,
+    name VARCHAR(255),
+    created_at DATETIME DEFAULT NOW(),
+    FOREIGN KEY (dryer_id) REFERENCES dryers(id),
+    FOREIGN KEY (schedule_id) REFERENCES schedules(id)
+);
+
+-- -----------------------------------------------------
+-- Mapping thiết bị ảo lịch trình cục bộ
+-- -----------------------------------------------------
+CREATE TABLE local_schedule_device_mapping (
+    local_schedule_id INT,
+    schedule_virtual_device_id INT,
+    device_id VARCHAR(255),
+    PRIMARY KEY (local_schedule_id, schedule_virtual_device_id),
+    FOREIGN KEY (local_schedule_id) REFERENCES local_schedules(id) ON DELETE CASCADE,
+    FOREIGN KEY (schedule_virtual_device_id) REFERENCES schedule_virtual_devices(id),
+    FOREIGN KEY (device_id) REFERENCES devices(id)
+);
+
+-- -----------------------------------------------------
+-- Quy tắc cục bộ (per-dryer instance of global rule)
+-- -----------------------------------------------------
+CREATE TABLE local_rules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    dryer_id INT,
+    rule_id INT,
+    name VARCHAR(255),
+    created_at DATETIME DEFAULT NOW(),
+    FOREIGN KEY (dryer_id) REFERENCES dryers(id),
+    FOREIGN KEY (rule_id) REFERENCES rules(id)
+);
+
+-- -----------------------------------------------------
+-- Mapping thiết bị ảo quy tắc cục bộ
+-- -----------------------------------------------------
+CREATE TABLE local_rule_device_mapping (
+    local_rule_id INT,
+    rule_virtual_device_id INT,
+    device_id VARCHAR(255),
+    PRIMARY KEY (local_rule_id, rule_virtual_device_id),
+    FOREIGN KEY (local_rule_id) REFERENCES local_rules(id) ON DELETE CASCADE,
+    FOREIGN KEY (rule_virtual_device_id) REFERENCES rule_virtual_devices(id),
+    FOREIGN KEY (device_id) REFERENCES devices(id)
+);
+
+-- -----------------------------------------------------
+-- Hàng đợi lịch trình trong mẻ sấy
+-- -----------------------------------------------------
+CREATE TABLE batch_schedule_queue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    batch_id INT,
+    local_schedule_id INT,
+    queue_order INT,
+    status ENUM('pending', 'running', 'completed', 'cancelled') DEFAULT 'pending',
+    started_at DATETIME NULL,
+    completed_at DATETIME NULL,
+    FOREIGN KEY (batch_id) REFERENCES batches(id),
+    FOREIGN KEY (local_schedule_id) REFERENCES local_schedules(id)
+);
+
+-- -----------------------------------------------------
+-- Tập quy tắc trong mẻ sấy
+-- -----------------------------------------------------
+CREATE TABLE batch_rule_set (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    batch_id INT,
+    local_rule_id INT,
+    priority_order INT,
+    active BOOLEAN DEFAULT TRUE,
+    UNIQUE (batch_id, local_rule_id),
+    FOREIGN KEY (batch_id) REFERENCES batches(id),
+    FOREIGN KEY (local_rule_id) REFERENCES local_rules(id)
 );
 
 -- -----------------------------------------------------
@@ -234,7 +318,7 @@ CREATE TABLE sensor_logs (
     timestamp DATETIME,
     device_id VARCHAR(255),
     value FLOAT,
-    FOREIGN KEY (device_id) REFERENCES devices(id)
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );
 
 -- -----------------------------------------------------
@@ -242,6 +326,7 @@ CREATE TABLE sensor_logs (
 -- -----------------------------------------------------
 CREATE TABLE event_types (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    event_code VARCHAR(50) NOT NULL UNIQUE,
     name VARCHAR(50) NOT NULL UNIQUE
 );
 

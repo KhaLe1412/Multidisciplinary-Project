@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { useApp } from "../context/AppContext";
-import {
+import type {
   Schedule,
   SchedulePhase,
   PolicyAction,
@@ -11,9 +11,8 @@ import {
   AlertOperator,
   Fruit,
   DeviceTypeModel,
-  buildActionsDesc,
-  formatOffsetSeconds,
 } from "../data/mockData";
+import { buildActionsDesc, formatOffsetSeconds } from "../data/mockData";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   Plus,

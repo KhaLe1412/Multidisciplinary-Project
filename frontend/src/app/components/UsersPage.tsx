@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { UserAccount, UserPermissions } from "../data/mockData";
+import type { UserAccount, UserPermissions } from "../data/mockData";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   Users,
@@ -30,7 +30,7 @@ import {
 
 const roleLabel: Record<string, string> = {
   admin: "Quản trị viên",
-  operator: "Vận hành viên",  
+  operator: "Vận hành viên",
   viewer: "Người xem",
 };
 const roleColor: Record<string, string> = {
@@ -843,8 +843,7 @@ export function UsersPage() {
                         <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 flex items-center gap-2">
                           <Shield size={16} className="text-purple-500" />
                           <span className="text-sm text-purple-700">
-                              Quản trị viên có toàn quyền truy cập hệ
-                              thống 
+                            Quản trị viên có toàn quyền truy cập hệ thống
                           </span>
                         </div>
                       )}
@@ -857,7 +856,7 @@ export function UsersPage() {
                           className="text-xs text-slate-500 mb-2"
                           style={{ fontWeight: 600 }}
                         >
-                          THÔNG TIN TÀI KHOẢN 
+                          THÔNG TIN TÀI KHOẢN
                         </p>
                         <div className="space-y-2">
                           {[

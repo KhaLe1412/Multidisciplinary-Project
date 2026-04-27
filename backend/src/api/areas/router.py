@@ -32,7 +32,7 @@ def create_area(body: AreaCreate, current_user: dict = Depends(get_current_user)
         new_id = cursor.lastrowid
     finally:
         conn.close()
-    write_system_log("area_change", "info", f"Tạo khu vực mới: {body.name}",
+    write_system_log("AREA_CHANGE", "info", f"Tạo khu vực mới: {body.name}",
                      user_id=current_user["id"])
     return {"id": new_id, **body.model_dump()}
 
@@ -57,7 +57,7 @@ def update_area(area_id: int, body: AreaUpdate, current_user: dict = Depends(get
         result = cursor.fetchone()
     finally:
         conn.close()
-    write_system_log("area_change", "info", f"Cập nhật khu vực id={area_id}",
+    write_system_log("AREA_CHANGE", "info", f"Cập nhật khu vực id={area_id}",
                      user_id=current_user["id"])
     return result
 
@@ -69,12 +69,12 @@ def delete_area(area_id: int, current_user: dict = Depends(get_current_user)):
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM dryers WHERE area_id = %s", (area_id,))
         if cursor.fetchone()[0] > 0:
-            raise HTTPException(status_code=409, detail="Khu vuc con may say, khong the xoa")
+            raise HTTPException(status_code=409, detail="Khu vực còn máy sấy, không thể xóa")
         cursor.execute("DELETE FROM areas WHERE id = %s", (area_id,))
         if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Area not found")
+            raise HTTPException(status_code=404, detail="Khu vực không tồn tại")
         conn.commit()
     finally:
         conn.close()
-    write_system_log("area_change", "info", f"Xóa khu vực id={area_id}",
+    write_system_log("AREA_CHANGE", "info", f"Xóa khu vực id={area_id}",
                      user_id=current_user["id"])

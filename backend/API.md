@@ -803,52 +803,156 @@ Xoá cascade: conditions → rule_actions → value_pair.
 
 ---
 
-## Batches
+## Local Schedules (per-dryer, dưới Dryer)
 
-### POST `/api/batches/manual`
+Lịch trình cục bộ — instance per-dryer của global schedule, kèm mapping thiết bị ảo → thiết bị thực.
 
-Khởi tạo và chạy mẻ sấy thủ công. Mẻ chạy trong thread nền, trả về ngay lập tức.
+### GET `/api/dryers/{dryer_id}/local-schedules`
 
-|                 |                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **Body (JSON)** | `{ "dryer_id": int *, "crop_id": int?, "input_weight": float?, "runtime": int * }`                                       |
-| **Output 201**  | `{ "id": int, "dryer_id": int, "crop_id": int\|null, "input_weight": float\|null, "runtime": int, "status": "running" }` |
-| **Output 404**  | `{ "detail": "Dryer not found" }`                                                                                        |
-| **Output 409**  | `{ "detail": "Dryer đang có mẻ chạy" }`                                                                                  |
+Lấy danh sách local schedules kèm tên schedule gốc và danh sách mappings.
 
-> `*` bắt buộc. `runtime` tính bằng giây.
+|                |                                                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Path param** | `dryer_id: int`                                                                                                |
+| **Output 200** | `[ { "id": int, "dryer_id": int, "schedule_id": int, "name": str, "schedule_name": str, "mappings": [...] } ]` |
 
 ---
 
-### POST `/api/batches/rule`
+### GET `/api/dryers/{dryer_id}/local-schedules/{local_schedule_id}`
 
-Khởi tạo mẻ sấy theo rule (ngưỡng cảm biến). Backend tự động map virtual device → thiết bị thực và poll rule mỗi 5 giây.
-
-|                 |                                                                                                                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Body (JSON)** | `BatchStartManual + { "rule_id": int *, "mappings": [ { "rule_virtual_device_id": int, "device_id": str } ] * }`                         |
-| **Output 201**  | `{ "id": int, "dryer_id": int, "crop_id": int\|null, "rule_id": int, "input_weight": float\|null, "runtime": int, "status": "running" }` |
-| **Output 404**  | Dryer hoặc rule không tồn tại                                                                                                            |
-| **Output 409**  | `{ "detail": "Dryer đang có mẻ chạy" }`                                                                                                  |
+|                 |                                                               |
+| --------------- | ------------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_schedule_id: int`                     |
+| **Output 200**  | `{ "id": int, ..., "schedule_name": str, "mappings": [...] }` |
+| **Output 404**  | `{ "detail": "Local schedule not found" }`                    |
 
 ---
 
-### POST `/api/batches/schedule`
+### POST `/api/dryers/{dryer_id}/local-schedules`
 
-Khởi tạo mẻ sấy theo lịch (schedule). Backend lần lượt chạy các stage theo `start_offset`.
+Tạo local schedule với device mappings.
 
-|                 |                                                                                                                                              |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Body (JSON)** | `BatchStartManual + { "schedule_id": int *, "mappings": [ { "schedule_virtual_device_id": int, "device_id": str } ] * }`                     |
-| **Output 201**  | `{ "id": int, "dryer_id": int, "crop_id": int\|null, "schedule_id": int, "input_weight": float\|null, "runtime": int, "status": "running" }` |
-| **Output 404**  | Dryer hoặc schedule không tồn tại                                                                                                            |
-| **Output 409**  | `{ "detail": "Dryer đang có mẻ chạy" }`                                                                                                      |
+|                 |                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Path param**  | `dryer_id: int`                                                                                                      |
+| **Body (JSON)** | `{ "name": str *, "schedule_id": int *, "mappings": [ { "schedule_virtual_device_id": int, "device_id": str } ] * }` |
+| **Output 201**  | `{ "id": int, "dryer_id": int, "schedule_id": int, "name": str }`                                                    |
+| **Output 404**  | Dryer hoặc schedule không tồn tại                                                                                    |
+
+---
+
+### PUT `/api/dryers/{dryer_id}/local-schedules/{local_schedule_id}`
+
+Cập nhật tên và/hoặc mappings (partial update).
+
+|                 |                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_schedule_id: int`                                                               |
+| **Body (JSON)** | `{ "name": str?, "mappings": [ { "schedule_virtual_device_id": int, "device_id": str } ]? }` (tùy chọn) |
+| **Output 200**  | `{ "id": int, "status": "updated" }`                                                                    |
+| **Output 404**  | `{ "detail": "Local schedule not found" }`                                                              |
+
+---
+
+### DELETE `/api/dryers/{dryer_id}/local-schedules/{local_schedule_id}`
+
+Xoá local schedule. Thất bại nếu đang dùng trong mẻ sấy hoạt động.
+
+|                 |                                                                         |
+| --------------- | ----------------------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_schedule_id: int`                               |
+| **Output 204**  | No content                                                              |
+| **Output 404**  | `{ "detail": "Local schedule not found" }`                              |
+| **Output 409**  | `{ "detail": "Không thể xoá — đang dùng trong mẻ sấy đang hoạt động" }` |
+
+---
+
+## Local Rules (per-dryer, dưới Dryer)
+
+Quy tắc cục bộ — instance per-dryer của global rule, kèm mapping thiết bị ảo → thiết bị thực.
+
+### GET `/api/dryers/{dryer_id}/local-rules`
+
+Lấy danh sách local rules kèm tên rule gốc và danh sách mappings.
+
+|                |                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| **Path param** | `dryer_id: int`                                                                                        |
+| **Output 200** | `[ { "id": int, "dryer_id": int, "rule_id": int, "name": str, "rule_name": str, "mappings": [...] } ]` |
+
+---
+
+### GET `/api/dryers/{dryer_id}/local-rules/{local_rule_id}`
+
+|                 |                                                           |
+| --------------- | --------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_rule_id: int`                     |
+| **Output 200**  | `{ "id": int, ..., "rule_name": str, "mappings": [...] }` |
+| **Output 404**  | `{ "detail": "Local rule not found" }`                    |
+
+---
+
+### POST `/api/dryers/{dryer_id}/local-rules`
+
+Tạo local rule với device mappings.
+
+|                 |                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Path param**  | `dryer_id: int`                                                                                              |
+| **Body (JSON)** | `{ "name": str *, "rule_id": int *, "mappings": [ { "rule_virtual_device_id": int, "device_id": str } ] * }` |
+| **Output 201**  | `{ "id": int, "dryer_id": int, "rule_id": int, "name": str }`                                                |
+| **Output 404**  | Dryer hoặc rule không tồn tại                                                                                |
+
+---
+
+### PUT `/api/dryers/{dryer_id}/local-rules/{local_rule_id}`
+
+Cập nhật tên và/hoặc mappings (partial update).
+
+|                 |                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_rule_id: int`                                                               |
+| **Body (JSON)** | `{ "name": str?, "mappings": [ { "rule_virtual_device_id": int, "device_id": str } ]? }` (tùy chọn) |
+| **Output 200**  | `{ "id": int, "status": "updated" }`                                                                |
+| **Output 404**  | `{ "detail": "Local rule not found" }`                                                              |
+
+---
+
+### DELETE `/api/dryers/{dryer_id}/local-rules/{local_rule_id}`
+
+Xoá local rule. Thất bại nếu đang dùng trong mẻ sấy hoạt động.
+
+|                 |                                                                         |
+| --------------- | ----------------------------------------------------------------------- |
+| **Path params** | `dryer_id: int`, `local_rule_id: int`                                   |
+| **Output 204**  | No content                                                              |
+| **Output 404**  | `{ "detail": "Local rule not found" }`                                  |
+| **Output 409**  | `{ "detail": "Không thể xoá — đang dùng trong mẻ sấy đang hoạt động" }` |
+
+---
+
+## Batches (Unified)
+
+Mô hình thống nhất: mỗi mẻ sấy kết hợp manual control (luôn khả dụng) + schedule queue (tuần tự) + rule set (đồng thời). Mẻ chạy trong thread nền.
+
+### POST `/api/batches/start`
+
+Khởi tạo mẻ sấy. Manual control luôn sẵn sàng. Schedule và rule được thêm động sau khi bắt đầu.
+
+|                 |                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Body (JSON)** | `{ "dryer_id": int *, "crop_id": int?, "input_weight": float?, "runtime": int? }`                                              |
+| **Output 201**  | `{ "id": int, "dryer_id": int, "crop_id": int\|null, "input_weight": float\|null, "runtime": int\|null, "status": "running" }` |
+| **Output 404**  | `{ "detail": "Dryer not found" }`                                                                                              |
+| **Output 409**  | `{ "detail": "Dryer đang có mẻ chạy" }`                                                                                        |
+
+> `runtime` tính bằng giây. Nếu không truyền → mẻ chạy vô thời hạn cho đến khi dừng thủ công.
 
 ---
 
 ### PUT `/api/batches/{batch_id}/end`
 
-Kết thúc mẻ sấy đang chạy: cập nhật DB, dừng thread nền, tắt tất cả controller về 0.
+Kết thúc mẻ sấy đang chạy: dừng tất cả thread, tắt controller về 0, cập nhật DB.
 
 |                 |                                                  |
 | --------------- | ------------------------------------------------ |
@@ -856,6 +960,105 @@ Kết thúc mẻ sấy đang chạy: cập nhật DB, dừng thread nền, tắt
 | **Body (JSON)** | `{ "output_weight": float?, "rating": int? }`    |
 | **Output 200**  | `{ "id": int, "status": "ended" }`               |
 | **Output 404**  | `{ "detail": "Batch not found or not running" }` |
+
+---
+
+### Batch Schedule Queue
+
+Hàng đợi lịch trình tuần tự cho mẻ đang chạy. Các local schedule được chạy lần lượt theo thứ tự.
+
+#### GET `/api/batches/{batch_id}/schedules`
+
+|                |                                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Path param** | `batch_id: int`                                                                                                                         |
+| **Output 200** | `[ { "id": int, "local_schedule_id": int, "queue_order": int, "status": str, "local_schedule_name": str, "schedule_name": str, ... } ]` |
+
+---
+
+#### POST `/api/batches/{batch_id}/schedules`
+
+Thêm local schedules vào hàng đợi.
+
+|                 |                                         |
+| --------------- | --------------------------------------- |
+| **Path param**  | `batch_id: int`                         |
+| **Body (JSON)** | `{ "local_schedule_ids": [int] * }`     |
+| **Output 201**  | `{ "added": int, "batch_id": int }`     |
+| **Output 404**  | Batch hoặc local schedule không tồn tại |
+
+---
+
+#### DELETE `/api/batches/{batch_id}/schedules/{queue_entry_id}`
+
+Xoá/hủy một entry trong hàng đợi.
+
+|                 |                                                  |
+| --------------- | ------------------------------------------------ |
+| **Path params** | `batch_id: int`, `queue_entry_id: int`           |
+| **Output 200**  | `{ "status": "removed", "queue_entry_id": int }` |
+| **Output 404**  | `{ "detail": "Queue entry not found" }`          |
+
+---
+
+#### DELETE `/api/batches/{batch_id}/schedules`
+
+Xoá toàn bộ hàng đợi (hủy pending + running).
+
+|                |                                                      |
+| -------------- | ---------------------------------------------------- |
+| **Path param** | `batch_id: int`                                      |
+| **Output 200** | `{ "status": "schedules_cleared", "batch_id": int }` |
+
+---
+
+### Batch Rule Set
+
+Tập quy tắc đồng thời cho mẻ đang chạy. Tất cả local rules được đánh giá song song mỗi 3 giây.
+
+#### GET `/api/batches/{batch_id}/rules`
+
+|                |                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Path param** | `batch_id: int`                                                                                                                             |
+| **Output 200** | `{ "rules": [ { "id": int, "local_rule_id": int, "priority_order": int, "active": bool, "local_rule_name": str, ... } ], "enabled": bool }` |
+
+---
+
+#### POST `/api/batches/{batch_id}/rules`
+
+Thêm local rules vào tập quy tắc.
+
+|                 |                                     |
+| --------------- | ----------------------------------- |
+| **Path param**  | `batch_id: int`                     |
+| **Body (JSON)** | `{ "local_rule_ids": [int] * }`     |
+| **Output 201**  | `{ "added": int, "batch_id": int }` |
+| **Output 404**  | Batch hoặc local rule không tồn tại |
+
+---
+
+#### DELETE `/api/batches/{batch_id}/rules/{local_rule_id}`
+
+Xoá một rule khỏi tập quy tắc.
+
+|                 |                                                 |
+| --------------- | ----------------------------------------------- |
+| **Path params** | `batch_id: int`, `local_rule_id: int`           |
+| **Output 200**  | `{ "status": "removed", "local_rule_id": int }` |
+| **Output 404**  | `{ "detail": "Rule not found in batch" }`       |
+
+---
+
+#### PUT `/api/batches/{batch_id}/rules/toggle`
+
+Bật/tắt đánh giá toàn bộ rule engine cho mẻ.
+
+|                 |                                                        |
+| --------------- | ------------------------------------------------------ |
+| **Path param**  | `batch_id: int`                                        |
+| **Body (JSON)** | `{ "enabled": bool * }`                                |
+| **Output 200**  | `{ "status": "enabled"\|"disabled", "batch_id": int }` |
 
 ---
 

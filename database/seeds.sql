@@ -39,18 +39,19 @@ VALUES
 
 INSERT INTO schedule_virtual_devices (schedule_id, name, device_type_id)
 VALUES 
-(1, 'Temperature', 1),
 (1, 'Fan Speed', 4);
 
 INSERT INTO stages (schedule_id, name, start_offset)
 VALUES 
-(1, 'Giai đoạn 1', 0),
-(1, 'Giai đoạn 2', 10);
+(1, 'Giai đoạn 1', 5),
+(1, 'Giai đoạn 2', 10),
+(1, 'Giai đoạn 3', 15);
 
 INSERT INTO schedule_actions (stage_id, schedule_virtual_device_id, value)
 VALUES 
-(1, 2, 1), -- bật quạt (svd id=2: Fan Speed)
-(2, 2, 0); -- tắt quạt
+(1, 1, 1), -- bật quạt (svd id=2: Fan Speed)
+(2, 1, 0), -- tắt quạt
+(3, 1, 1); -- bật quạt lại
 
 INSERT INTO rules (name, description, crop_id)
 VALUES 
@@ -62,24 +63,48 @@ VALUES
 (1, 'Fan Speed', 4);
 
 INSERT INTO value_pairs (rule_id, name)
-VALUES (1, 'High Temp Alert');
+VALUES 
+(1, 'High Temp Alert'),
+(1, "Normal Temp Action");
 
 INSERT INTO conditions (value_pair_id, rule_virtual_device_id, operator, compare_value )
 VALUES 
-(1, 1,'>', 70); -- nhiệt độ > 70
+(1, 1,'>', 70), -- nhiệt độ > 70
+(2, 1,'<=', 70); -- nhiệt độ <= 70
 
 INSERT INTO rule_actions (value_pair_id, rule_virtual_device_id, value)
 VALUES 
-(1, 2, 1); -- bật quạt max
+(1, 2, 1), -- bật quạt max
+(2, 2, 0); -- tắt quạt
 
-INSERT INTO event_types (name) VALUES
-('batch_start'), ('batch_end'), ('device_control'),
-('rule_alert'), ('rule_action'), ('schedule_stage'), ('schedule_action'),
-('area_change'), ('dryer_change'), ('device_change'), ('device_type_change'),
-('schedule_change'), ('rule_change'), ('crop_change'), ('profile_change');
+INSERT INTO event_types (event_code, name) VALUES
+('START_BATCH', 'Khởi động mẻ sấy'), ('END_BATCH', 'Kết thúc mẻ sấy'), ('DEVICE_CONTROL', 'Điều khiển thiết bị'),
+('RULE_ALERT', 'Cảnh báo quy tắc'), ('RULE_ACTION', 'Hành động quy tắc'), ('SCHEDULE_STAGE', 'Giai đoạn lịch trình'), ('SCHEDULE_ACTION', 'Hành động lịch trình'),
+('AREA_CHANGE', 'Thay đổi khu vực'), ('DRYER_CHANGE', 'Thay đổi máy sấy'), ('DEVICE_CHANGE', 'Thay đổi thiết bị'), ('DEVICE_TYPE_CHANGE', 'Thay đổi loại thiết bị'),
+('SCHEDULE_CHANGE', 'Thay đổi lịch trình'), ('RULE_CHANGE', 'Thay đổi quy tắc'), ('CROP_CHANGE', 'Thay đổi cây trồng'), ('PROFILE_CHANGE', 'Thay đổi hồ sơ');
 
 INSERT INTO severity_levels (level)
 VALUES 
 ('info'),
 ('warning'),
 ('error');
+
+-- Local schedules (per-dryer instances of global schedules)
+-- INSERT INTO local_schedules (dryer_id, schedule_id, name)
+-- VALUES 
+-- (1, 1, 'Lịch xoài - Máy 1');
+
+-- INSERT INTO local_schedule_device_mapping (local_schedule_id, schedule_virtual_device_id, device_id)
+-- VALUES 
+-- (1, 1, 'sensor'),
+-- (1, 2, 'worker');
+
+-- -- Local rules (per-dryer instances of global rules)
+-- INSERT INTO local_rules (dryer_id, rule_id, name)
+-- VALUES 
+-- (1, 1, 'Rule nhiệt độ - Máy 1');
+
+-- INSERT INTO local_rule_device_mapping (local_rule_id, rule_virtual_device_id, device_id)
+-- VALUES 
+-- (1, 1, 'sensor'),
+-- (1, 2, 'worker');

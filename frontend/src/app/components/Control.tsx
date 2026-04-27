@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useApp } from "../context/AppContext";
-import { Dryer } from "../data/mockData";
+import type { Dryer } from "../data/mockData";
 import {
   Search,
   Cpu,
