@@ -170,6 +170,7 @@ def delete_schedule_virtual_device(svd_id: int, current_user: dict = Depends(get
         orphan_ids = [r["local_schedule_id"] for r in cur.fetchall()]
         if orphan_ids:
             placeholders = ",".join(["%s"] * len(orphan_ids))
+            cur.execute(f"DELETE FROM batch_schedule_queue WHERE local_schedule_id IN ({placeholders})", tuple(orphan_ids))
             cur.execute(f"DELETE FROM local_schedule_device_mapping WHERE local_schedule_id IN ({placeholders})", tuple(orphan_ids))
             cur.execute(f"DELETE FROM local_schedules WHERE id IN ({placeholders})", tuple(orphan_ids))
         # Xóa mapping lịch sử mẻ sấy trước khi xóa SVD
@@ -256,6 +257,7 @@ def delete_rule_virtual_device(rvd_id: int):
         orphan_ids = [r["local_rule_id"] for r in cur.fetchall()]
         if orphan_ids:
             placeholders = ",".join(["%s"] * len(orphan_ids))
+            cur.execute(f"DELETE FROM batch_rule_set WHERE local_rule_id IN ({placeholders})", tuple(orphan_ids))
             cur.execute(f"DELETE FROM local_rule_device_mapping WHERE local_rule_id IN ({placeholders})", tuple(orphan_ids))
             cur.execute(f"DELETE FROM local_rules WHERE id IN ({placeholders})", tuple(orphan_ids))
         cur.execute("DELETE FROM batch_rule_device_mapping WHERE rule_virtual_device_id = %s", (rvd_id,))
@@ -384,6 +386,10 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(get_current_u
             raise HTTPException(status_code=404, detail="Schedule not found")
         # Cascade: actions → stages → schedule_virtual_devices → mapping → schedule
         # Also clean up local_schedules referencing this schedule
+        cur.execute(
+            "DELETE FROM batch_schedule_queue WHERE local_schedule_id IN (SELECT id FROM local_schedules WHERE schedule_id = %s)",
+            (schedule_id,),
+        )
         cur.execute(
             "DELETE FROM local_schedule_device_mapping WHERE local_schedule_id IN (SELECT id FROM local_schedules WHERE schedule_id = %s)",
             (schedule_id,),
@@ -773,6 +779,10 @@ def delete_rule(rule_id: int, current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Rule not found")
         # Cascade: conditions → rule_actions → value_pairs → mapping → rule_virtual_devices → rule
         # Also clean up local_rules referencing this rule
+        cur.execute(
+            "DELETE FROM batch_rule_set WHERE local_rule_id IN (SELECT id FROM local_rules WHERE rule_id = %s)",
+            (rule_id,),
+        )
         cur.execute(
             "DELETE FROM local_rule_device_mapping WHERE local_rule_id IN (SELECT id FROM local_rules WHERE rule_id = %s)",
             (rule_id,),
