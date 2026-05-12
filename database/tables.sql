@@ -281,36 +281,6 @@ CREATE TABLE batch_rule_set (
 );
 
 -- -----------------------------------------------------
--- Mapping: Mẻ sấy - Lịch trình - Thiết bị ảo lịch trình - Thiết bị vật lý
--- -----------------------------------------------------
-CREATE TABLE batch_schedule_device_mapping (
-    batch_id INT,
-    schedule_id INT,
-    schedule_virtual_device_id INT,
-    device_id VARCHAR(255),
-    PRIMARY KEY (batch_id, schedule_id, schedule_virtual_device_id, device_id),
-    FOREIGN KEY (batch_id) REFERENCES batches(id),
-    FOREIGN KEY (schedule_id) REFERENCES schedules(id),
-    FOREIGN KEY (schedule_virtual_device_id) REFERENCES schedule_virtual_devices(id),
-    FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
--- -----------------------------------------------------
--- Mapping: Mẻ sấy - Quy tắc - Thiết bị ảo quy tắc - Thiết bị vật lý
--- -----------------------------------------------------
-CREATE TABLE batch_rule_device_mapping (
-    batch_id INT,
-    rule_id INT,
-    rule_virtual_device_id INT,
-    device_id VARCHAR(255),
-    PRIMARY KEY (batch_id, rule_id, rule_virtual_device_id, device_id),
-    FOREIGN KEY (batch_id) REFERENCES batches(id),
-    FOREIGN KEY (rule_id) REFERENCES rules(id),
-    FOREIGN KEY (rule_virtual_device_id) REFERENCES rule_virtual_devices(id),
-    FOREIGN KEY (device_id) REFERENCES devices(id)
-);
-
--- -----------------------------------------------------
 -- Log cảm biến
 -- -----------------------------------------------------
 CREATE TABLE sensor_logs (
